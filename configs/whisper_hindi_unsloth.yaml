@@ -1,0 +1,70 @@
+# Whisper Large-v3-Turbo Fine-Tuning Configuration
+# Using Unsloth for efficient LoRA-based training
+#
+# Usage:
+#   python scripts/finetune_whisper_unsloth.py --config configs/whisper_hindi_unsloth.yaml
+
+# Model configuration
+model:
+  name: "unsloth/whisper-large-v3-turbo"
+  load_in_4bit: false  # Set true for lower memory usage
+  language: "hi"
+  task: "transcribe"  # or "translate" for translation to English
+
+# LoRA configuration
+lora:
+  r: 32  # LoRA rank (higher = more capacity, more memory)
+  alpha: 32  # LoRA alpha (usually same as r)
+  dropout: 0
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+  use_gradient_checkpointing: true
+
+# Dataset configuration
+dataset:
+  name: "ai4bharat/indicvoices_r"
+  audio_column: "audio"
+  text_column: "text"
+  sampling_rate: 16000
+  max_audio_length_seconds: 30.0
+  min_audio_length_seconds: 0.5
+  # Split configuration (if dataset doesn't have splits)
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+
+# Training configuration
+training:
+  output_dir: "./outputs/whisper-hindi-unsloth"
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 4  # Effective batch size = 4 * 4 = 16
+  learning_rate: 1.0e-4
+  num_train_epochs: 10
+  warmup_steps: 50
+  weight_decay: 0.01
+  fp16: true
+  bf16: false  # Set true if GPU supports bf16
+  optim: "adamw_8bit"  # 8-bit optimizer for memory efficiency
+  lr_scheduler_type: "linear"
+
+  # Logging and saving
+  logging_steps: 10
+  eval_steps: 50
+  save_steps: 100
+  save_total_limit: 3
+
+  # Generation settings for evaluation
+  predict_with_generate: true
+  generation_max_length: 225
+
+# Evaluation configuration
+evaluation:
+  metric: "wer"  # Primary metric
+  compute_cer: true
+
+# Seed for reproducibility
+seed: 42

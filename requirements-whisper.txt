@@ -1,0 +1,27 @@
+# Whisper Fine-Tuning with Unsloth Requirements
+# Install with: pip install -r requirements-whisper.txt
+
+# Unsloth for efficient fine-tuning
+unsloth>=2024.12
+
+# HuggingFace Transformers
+transformers>=4.45.0
+datasets>=3.0.0
+accelerate>=0.34.0
+huggingface_hub>=0.20.0
+
+# PyTorch
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# Evaluation
+evaluate
+jiwer>=3.0.0
+
+# Audio processing
+soundfile>=0.12.0
+librosa>=0.10.0
+
+# Utilities
+pyyaml>=6.0
+tqdm>=4.65.0
