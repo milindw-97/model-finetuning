@@ -189,6 +189,17 @@ def finetune_parakeet(
     logger.info(f"  Encoder: {model.encoder.__class__.__name__}")
     logger.info(f"  Decoder: {model.decoder.__class__.__name__}")
 
+    # Add this BEFORE with open_dict(cfg):
+    train_path = config["train_ds"]["manifest_filepath"]
+    val_path = config["validation_ds"]["manifest_filepath"]
+
+    if not Path(train_path).exists():
+        raise FileNotFoundError(f"Train manifest missing: {train_path}")
+    if not Path(val_path).exists():
+        raise FileNotFoundError(f"Val manifest missing: {val_path}")
+
+    logger.info(f"✅ Manifests verified: {train_path}, {val_path}")
+
     # Update model configuration
     cfg = model.cfg
 
@@ -237,6 +248,7 @@ def finetune_parakeet(
             cfg.spec_augment.freq_width = spec_aug_config.get("freq_width", 27)
             cfg.spec_augment.time_width = spec_aug_config.get("time_width", 0.05)
 
+    model.cfg = cfg
     logger.info("Model configuration updated for fine-tuning")
 
     # Freeze encoder if specified
