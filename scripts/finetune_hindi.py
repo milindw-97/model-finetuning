@@ -267,11 +267,6 @@ def finetune_parakeet(
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
-    # Replace trainer creation with:
-    from pytorch_lightning.loggers import TensorBoardLogger
-
-    tb_logger = TensorBoardLogger(save_dir=exp_dir, name="hindi_finetune")
-
     trainer = pl.Trainer(
         devices=trainer_config.get("devices", 1),
         accelerator=trainer_config.get("accelerator", "gpu"),
@@ -282,35 +277,35 @@ def finetune_parakeet(
         log_every_n_steps=trainer_config.get("log_every_n_steps", 10),
         enable_checkpointing=trainer_config.get("enable_checkpointing", True),
         default_root_dir=exp_dir,
-        logger=tb_logger,
+        logger=False,
     )
 
     # Experiment manager
-    exp_manager_config = config.get("exp_manager", {})
-    exp_cfg = {
-        "exp_dir": exp_manager_config.get("exp_dir", exp_dir),
-        "name": exp_manager_config.get("name", "hindi_finetune"),
-        "checkpoint_callback_params": exp_manager_config.get(
-            "checkpoint_callback_params",
-            {
-                "monitor": "val_wer",
-                "mode": "min",
-                "save_top_k": 3,
-                "save_last": True,
-            },
-        ),
-        "create_tensorboard_logger": exp_manager_config.get(
-            "create_tensorboard_logger", True
-        ),
-        "create_wandb_logger": exp_manager_config.get("create_wandb_logger", False),
-    }
+    # exp_manager_config = config.get("exp_manager", {})
+    # exp_cfg = {
+    #     "exp_dir": exp_manager_config.get("exp_dir", exp_dir),
+    #     "name": exp_manager_config.get("name", "hindi_finetune"),
+    #     "checkpoint_callback_params": exp_manager_config.get(
+    #         "checkpoint_callback_params",
+    #         {
+    #             "monitor": "val_wer",
+    #             "mode": "min",
+    #             "save_top_k": 3,
+    #             "save_last": True,
+    #         },
+    #     ),
+    #     "create_tensorboard_logger": exp_manager_config.get(
+    #         "create_tensorboard_logger", True
+    #     ),
+    #     "create_wandb_logger": exp_manager_config.get("create_wandb_logger", False),
+    # }
 
     # Early stopping
-    early_stop = exp_manager_config.get("early_stopping_callback_params")
-    if early_stop:
-        exp_cfg["early_stopping_callback_params"] = early_stop
+    # early_stop = exp_manager_config.get("early_stopping_callback_params")
+    # if early_stop:
+    #     exp_cfg["early_stopping_callback_params"] = early_stop
 
-    exp_manager(trainer, exp_cfg)
+    # exp_manager(trainer, exp_cfg)
 
     # Print training info
     print("\n" + "=" * 60)
