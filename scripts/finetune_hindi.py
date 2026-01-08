@@ -33,7 +33,8 @@ import yaml
 
 import os
 
-os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "1"
+# Use Numba's native CUDA binding to avoid nvJitLink compatibility issues
+os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
 os.environ["NUMBA_DISABLE_CUDA"] = "0"
 
 logging.basicConfig(
@@ -218,10 +219,7 @@ def finetune_parakeet(
         cfg.train_ds.min_duration = config["train_ds"].get("min_duration", 0.3)
         cfg.train_ds.shuffle = config["train_ds"].get("shuffle", True)
         cfg.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
-
-        # Disable token-per-second filtering (both must be None or both must be set)
-        cfg.train_ds.min_tps = None
-        cfg.train_ds.max_tps = None
+        cfg.train_ds.use_lhotse = False
 
         # Validation data
         cfg.validation_ds.manifest_filepath = config["validation_ds"][
