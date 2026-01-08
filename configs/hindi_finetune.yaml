@@ -7,7 +7,7 @@
 
 # Pre-trained model
 model:
-  pretrained_name: "parakeet-rnnt-1.1b-multilingual"
+  pretrained_name: "nvidia/parakeet-rnnt-1.1b"
   # Alternative: use local .nemo file
   # pretrained_path: "/path/to/model.nemo"
 
