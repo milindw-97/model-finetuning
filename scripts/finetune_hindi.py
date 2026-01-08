@@ -194,32 +194,26 @@ def finetune_parakeet(
 
     with open_dict(cfg):
         # Training data
-        cfg.model.train_ds.manifest_filepath = config["train_ds"]["manifest_filepath"]
-        cfg.model.train_ds.batch_size = config["train_ds"].get("batch_size", 4)
-        cfg.model.train_ds.num_workers = config["train_ds"].get("num_workers", 4)
-        cfg.model.train_ds.sample_rate = config["train_ds"].get("sample_rate", 16000)
-        cfg.model.train_ds.max_duration = config["train_ds"].get("max_duration", 20.0)
-        cfg.model.train_ds.min_duration = config["train_ds"].get("min_duration", 0.3)
-        cfg.model.train_ds.shuffle = config["train_ds"].get("shuffle", True)
-        cfg.model.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
+        cfg.train_ds.manifest_filepath = config["train_ds"]["manifest_filepath"]
+        cfg.train_ds.batch_size = config["train_ds"].get("batch_size", 4)
+        cfg.train_ds.num_workers = config["train_ds"].get("num_workers", 4)
+        cfg.train_ds.sample_rate = config["train_ds"].get("sample_rate", 16000)
+        cfg.train_ds.max_duration = config["train_ds"].get("max_duration", 20.0)
+        cfg.train_ds.min_duration = config["train_ds"].get("min_duration", 0.3)
+        cfg.train_ds.shuffle = config["train_ds"].get("shuffle", True)
+        cfg.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
 
         # Validation data
-        cfg.model.validation_ds.manifest_filepath = config["validation_ds"][
+        cfg.validation_ds.manifest_filepath = config["validation_ds"][
             "manifest_filepath"
         ]
-        cfg.model.validation_ds.batch_size = config["validation_ds"].get(
-            "batch_size", 4
-        )
-        cfg.model.validation_ds.num_workers = config["validation_ds"].get(
-            "num_workers", 4
-        )
-        cfg.model.validation_ds.sample_rate = config["validation_ds"].get(
+        cfg.validation_ds.batch_size = config["validation_ds"].get("batch_size", 4)
+        cfg.validation_ds.num_workers = config["validation_ds"].get("num_workers", 4)
+        cfg.validation_ds.sample_rate = config["validation_ds"].get(
             "sample_rate", 16000
         )
-        cfg.model.validation_ds.shuffle = False
-        cfg.model.validation_ds.pin_memory = config["validation_ds"].get(
-            "pin_memory", True
-        )
+        cfg.validation_ds.shuffle = False
+        cfg.validation_ds.pin_memory = config["validation_ds"].get("pin_memory", True)
 
         # Optimizer
         optim_config = config.get("optim", {})
