@@ -50,7 +50,7 @@ def check_dependencies():
         missing.append("nemo_toolkit[asr]")
 
     try:
-        import pytorch_lightning as pl
+        import lightning.pytorch as pl
 
         logger.info(f"PyTorch Lightning version: {pl.__version__}")
     except ImportError:
@@ -130,7 +130,7 @@ def finetune_parakeet(
         resume_from: Path to checkpoint to resume from
     """
     import nemo.collections.asr as nemo_asr
-    import pytorch_lightning as pl
+    import lightning.pytorch as pl
     from nemo.utils.exp_manager import exp_manager
     from omegaconf import OmegaConf, open_dict
 
