@@ -267,6 +267,11 @@ def finetune_parakeet(
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
+    # Replace trainer creation with:
+    from pytorch_lightning.loggers import TensorBoardLogger
+
+    tb_logger = TensorBoardLogger(save_dir=exp_dir, name="hindi_finetune")
+
     trainer = pl.Trainer(
         devices=trainer_config.get("devices", 1),
         accelerator=trainer_config.get("accelerator", "gpu"),
@@ -277,7 +282,7 @@ def finetune_parakeet(
         log_every_n_steps=trainer_config.get("log_every_n_steps", 10),
         enable_checkpointing=trainer_config.get("enable_checkpointing", True),
         default_root_dir=exp_dir,
-        logger=False,
+        logger=tb_logger,
     )
 
     # Experiment manager
