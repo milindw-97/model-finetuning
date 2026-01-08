@@ -31,6 +31,11 @@ from typing import Optional
 import torch
 import yaml
 
+import os
+
+os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "1"
+os.environ["NUMBA_DISABLE_CUDA"] = "0"
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )

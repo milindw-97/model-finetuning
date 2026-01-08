@@ -72,7 +72,7 @@ trainer:
   devices: 1  # Number of GPUs
   accelerator: "gpu"
   max_epochs: 100
-  precision: "16-mixed"  # Use bf16-mixed if GPU supports it
+  precision: 32
 
   # Gradient settings
   accumulate_grad_batches: 4  # Effective batch size = 4 * 4 = 16
