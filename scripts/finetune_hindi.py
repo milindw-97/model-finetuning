@@ -219,6 +219,10 @@ def finetune_parakeet(
         cfg.train_ds.shuffle = config["train_ds"].get("shuffle", True)
         cfg.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
 
+        # Disable token-per-second filtering (both must be None or both must be set)
+        cfg.train_ds.min_tps = None
+        cfg.train_ds.max_tps = None
+
         # Validation data
         cfg.validation_ds.manifest_filepath = config["validation_ds"][
             "manifest_filepath"
