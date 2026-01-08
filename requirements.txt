@@ -1,67 +1,25 @@
-# Parakeet RNNT Hindi Fine-Tuning Requirements
-# Install with: pip install -r requirements.txt
-#
-# IMPORTANT: These versions are pinned for NeMo compatibility.
-# DO NOT upgrade numpy to >=2.0 - it will break NeMo!
 
-# Core NeMo toolkit with ASR support
-nemo_toolkit[asr]>=2.0.0,<2.6.0
-
-# PyTorch (ensure CUDA-compatible version)
-torch>=2.1.0,<2.5.0
-torchaudio>=2.1.0,<2.5.0
-
-# PyTorch Lightning (NeMo compatibility)
-pytorch-lightning>=2.0.0,<2.4.0
-
-# CRITICAL: numpy must be < 2.0 for NeMo compatibility
-# See: https://github.com/NVIDIA-NeMo/NeMo/issues/14505
+nemo-toolkit[asr]==2.6.0
+torch==2.4.1
+torchaudio==2.4.1
+pytorch-lightning==2.3.3
 sox==1.4.0
-numpy>=1.22.0,<2.0.0
+numpy==1.26.4
+omegaconf==2.3.0
+hydra-core==1.3.2
+soundfile==0.13.1
+librosa==0.11.0
+scipy==1.15.3
+jiwer==3.1.0
+datasets==3.6.0
+huggingface-hub==0.36.0
+transformers==4.53.3
+sentencepiece==0.2.1
+pandas==2.3.3
+tqdm==4.67.1
+Cython==3.2.4
+packaging==24.1
+peft==0.18.0
+accelerate==1.12.0
+evaluate==0.4.6
 
-# Configuration management
-omegaconf>=2.3.0
-hydra-core>=1.3.0
-
-# Audio processing
-soundfile>=0.12.0
-librosa>=0.10.0
-scipy>=1.10.0
-
-# Evaluation metrics
-jiwer>=3.0.0
-
-# HuggingFace datasets (for data loading)
-datasets>=2.14.0
-huggingface_hub>=0.20.0
-transformers>=4.35.0
-
-# Tokenization
-sentencepiece>=0.1.99
-
-# Utilities
-pandas>=2.0.0
-tqdm>=4.65.0
-Cython>=0.29.0
-packaging>=23.0
-
-# Optional: Weights & Biases logging
-# wandb>=0.15.0
-
-# Optional: TensorBoard
-# tensorboard>=2.13.0
-
-# ============================================
-# Whisper Fine-Tuning (with Unsloth or PEFT)
-# ============================================
-# Install separately: pip install unsloth
-# Unsloth requires PyTorch 2.2+ with CUDA
-
-# PEFT for LoRA (fallback when Unsloth unavailable)
-peft>=0.10.0
-
-# Accelerate for efficient training
-accelerate>=0.27.0
-
-# Evaluation metrics
-evaluate>=0.4.0
