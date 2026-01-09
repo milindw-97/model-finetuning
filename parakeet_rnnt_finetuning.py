@@ -17,6 +17,15 @@ Requirements:
 """
 
 import os
+import tempfile
+
+# Set temp directory to a location with more space (for .nemo file extraction)
+CUSTOM_TMPDIR = "/workspace/tmp"
+os.makedirs(CUSTOM_TMPDIR, exist_ok=True)
+os.environ["TMPDIR"] = CUSTOM_TMPDIR
+os.environ["TEMP"] = CUSTOM_TMPDIR
+os.environ["TMP"] = CUSTOM_TMPDIR
+tempfile.tempdir = CUSTOM_TMPDIR
 import sys
 import json
 import logging
