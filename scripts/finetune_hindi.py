@@ -255,7 +255,26 @@ def finetune_parakeet(
             cfg.spec_augment.freq_width = spec_aug_config.get("freq_width", 27)
             cfg.spec_augment.time_width = spec_aug_config.get("time_width", 0.05)
 
+        # Use torchaudio RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
+        # Numba CUDA kernels don't support sm_120 (Blackwell) yet
+        if hasattr(cfg, "loss"):
+            cfg.loss.loss_name = "torchaudio"
+            logger.info("Using torchaudio RNNT loss (RTX 5090/Blackwell compatible)")
+
     model.cfg = cfg
+
+    # Rebuild the loss module with the new config (required for loss_name change to take effect)
+    if hasattr(model, "loss") and hasattr(cfg, "loss"):
+        from nemo.collections.asr.losses.rnnt import RNNTLoss
+        loss_kwargs = OmegaConf.to_container(cfg.loss.get("loss_kwargs", {})) if cfg.loss.get("loss_kwargs") else {}
+        model.loss = RNNTLoss(
+            num_classes=model.joint.num_classes_with_blank - 1,
+            loss_name=cfg.loss.loss_name,
+            loss_kwargs=loss_kwargs,
+            reduction=cfg.loss.get("reduction", "mean_batch"),
+        )
+        logger.info(f"Rebuilt loss module with: {cfg.loss.loss_name}")
+
     logger.info("Model configuration updated for fine-tuning")
 
     # Freeze encoder if specified
