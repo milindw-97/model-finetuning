@@ -229,6 +229,9 @@ def finetune_parakeet(
         cfg.train_ds.shuffle = config["train_ds"].get("shuffle", True)
         cfg.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
         cfg.train_ds.use_lhotse = False
+        cfg.train_ds.is_tarred = False
+        cfg.train_ds.tarred_audio_filepaths = None
+        cfg.train_ds.defer_setup = False
 
         # Validation data
         cfg.validation_ds.manifest_filepath = config["validation_ds"][
@@ -241,6 +244,9 @@ def finetune_parakeet(
         )
         cfg.validation_ds.shuffle = False
         cfg.validation_ds.pin_memory = config["validation_ds"].get("pin_memory", True)
+        cfg.validation_ds.use_lhotse = False
+        cfg.validation_ds.is_tarred = False
+        cfg.validation_ds.tarred_audio_filepaths = None
 
         # Optimizer
         optim_config = config.get("optim", {})

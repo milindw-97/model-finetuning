@@ -39,16 +39,18 @@ from tqdm import tqdm
 
 # Disable torchcodec to avoid FFmpeg linking issues
 import os
+
 os.environ["HF_AUDIO_DECODER"] = "ffmpeg"
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
-def resample_audio(audio_array: np.ndarray, orig_sr: int, target_sr: int = 16000) -> np.ndarray:
+def resample_audio(
+    audio_array: np.ndarray, orig_sr: int, target_sr: int = 16000
+) -> np.ndarray:
     """
     Resample audio to target sample rate.
 
@@ -65,6 +67,7 @@ def resample_audio(audio_array: np.ndarray, orig_sr: int, target_sr: int = 16000
 
     try:
         import librosa
+
         return librosa.resample(audio_array, orig_sr=orig_sr, target_sr=target_sr)
     except ImportError:
         # Fallback: simple decimation/interpolation
@@ -79,7 +82,7 @@ def split_dataset(
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
-    seed: int = 42
+    seed: int = 42,
 ) -> Tuple[Dataset, Dataset, Dataset]:
     """
     Split dataset into train/val/test sets.
@@ -94,27 +97,22 @@ def split_dataset(
     Returns:
         Tuple of (train, val, test) datasets
     """
-    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, \
+    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, (
         "Split ratios must sum to 1.0"
+    )
 
     # First split: train vs (val + test)
-    split1 = dataset.train_test_split(
-        test_size=(val_ratio + test_ratio),
-        seed=seed
-    )
-    train = split1['train']
+    split1 = dataset.train_test_split(test_size=(val_ratio + test_ratio), seed=seed)
+    train = split1["train"]
 
     # Second split: val vs test
     if test_ratio > 0:
         val_test_ratio = test_ratio / (val_ratio + test_ratio)
-        split2 = split1['test'].train_test_split(
-            test_size=val_test_ratio,
-            seed=seed
-        )
-        val = split2['train']
-        test = split2['test']
+        split2 = split1["test"].train_test_split(test_size=val_test_ratio, seed=seed)
+        val = split2["train"]
+        test = split2["test"]
     else:
-        val = split1['test']
+        val = split1["test"]
         test = Dataset.from_dict({k: [] for k in dataset.column_names})
 
     return train, val, test
@@ -129,7 +127,7 @@ def convert_dataset_to_nemo(
     language: str = "hi",
     target_sr: int = 16000,
     max_duration: float = 30.0,
-    min_duration: float = 0.3
+    min_duration: float = 0.3,
 ) -> str:
     """
     Convert a HuggingFace dataset split to NeMo manifest format.
@@ -168,8 +166,8 @@ def convert_dataset_to_nemo(
                 continue
 
             if isinstance(audio, dict):
-                array = np.array(audio['array'])
-                sr = audio.get('sampling_rate', 16000)
+                array = np.array(audio["array"])
+                sr = audio.get("sampling_rate", 16000)
             else:
                 skipped += 1
                 continue
@@ -216,7 +214,7 @@ def convert_dataset_to_nemo(
                 "audio_filepath": str(audio_filepath.absolute()),
                 "text": text.strip(),
                 "duration": round(duration, 3),
-                "lang": language
+                "lang": language,
             }
             entries.append(entry)
 
@@ -226,9 +224,9 @@ def convert_dataset_to_nemo(
             continue
 
     # Write manifest
-    with open(manifest_path, 'w', encoding='utf-8') as f:
+    with open(manifest_path, "w", encoding="utf-8") as f:
         for entry in entries:
-            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     logger.info(f"Created {split_name} manifest: {manifest_path}")
     logger.info(f"  Samples: {len(entries)}, Skipped: {skipped}")
@@ -293,7 +291,9 @@ def convert_streaming_to_nemo(
     for split in splits:
         audio_dirs[split] = output_path / "audio" / split
         audio_dirs[split].mkdir(parents=True, exist_ok=True)
-        manifest_files[split] = open(output_path / f"{split}_manifest.json", "w", encoding="utf-8")
+        manifest_files[split] = open(
+            output_path / f"{split}_manifest.json", "w", encoding="utf-8"
+        )
 
     # Load dataset in streaming mode
     logger.info(f"Loading dataset in streaming mode: {dataset_name}")
@@ -323,12 +323,16 @@ def convert_streaming_to_nemo(
     # test is everything above val_threshold
 
     logger.info(f"Processing samples (streaming mode, max_samples={max_samples})...")
-    logger.info(f"Split ratios - Train: {train_ratio}, Val: {val_ratio}, Test: {test_ratio}")
+    logger.info(
+        f"Split ratios - Train: {train_ratio}, Val: {val_ratio}, Test: {test_ratio}"
+    )
 
     total_processed = 0
 
     try:
-        for idx, sample in enumerate(tqdm(dataset, desc="Converting", total=max_samples)):
+        for idx, sample in enumerate(
+            tqdm(dataset, desc="Converting", total=max_samples)
+        ):
             if max_samples and total_processed >= max_samples:
                 break
 
@@ -340,8 +344,8 @@ def convert_streaming_to_nemo(
                     continue
 
                 if isinstance(audio, dict):
-                    array = np.array(audio['array'])
-                    sr = audio.get('sampling_rate', 16000)
+                    array = np.array(audio["array"])
+                    sr = audio.get("sampling_rate", 16000)
                 else:
                     skipped += 1
                     continue
@@ -360,7 +364,13 @@ def convert_streaming_to_nemo(
 
                 # Get transcription - try multiple possible column names
                 text = None
-                for col in [text_column, "transcription", "text", "sentence", "transcript"]:
+                for col in [
+                    text_column,
+                    "transcription",
+                    "text",
+                    "sentence",
+                    "transcript",
+                ]:
                     if col in sample and sample.get(col):
                         text = sample.get(col)
                         break
@@ -404,9 +414,11 @@ def convert_streaming_to_nemo(
                     "audio_filepath": str(audio_filepath.absolute()),
                     "text": text,
                     "duration": round(duration, 3),
-                    "lang": language
+                    "lang": language,
                 }
-                manifest_files[split].write(json.dumps(entry, ensure_ascii=False) + '\n')
+                manifest_files[split].write(
+                    json.dumps(entry, ensure_ascii=False) + "\n"
+                )
                 manifest_files[split].flush()  # Flush to disk immediately
 
                 counters[split] += 1
@@ -429,10 +441,7 @@ def convert_streaming_to_nemo(
     for split in splits:
         logger.info(f"  {split}: {counters[split]} samples")
 
-    return {
-        split: str(output_path / f"{split}_manifest.json")
-        for split in splits
-    }
+    return {split: str(output_path / f"{split}_manifest.json") for split in splits}
 
 
 def validate_manifest(manifest_path: str) -> Dict:
@@ -455,10 +464,10 @@ def validate_manifest(manifest_path: str) -> Dict:
         "num_samples": 0,
         "total_duration_hours": 0,
         "missing_audio_files": 0,
-        "languages": {}
+        "languages": {},
     }
 
-    with open(manifest_path, 'r', encoding='utf-8') as f:
+    with open(manifest_path, "r", encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             try:
                 entry = json.loads(line.strip())
@@ -490,84 +499,50 @@ def main():
         "--input-dataset",
         type=str,
         default="ai4bharat/IndicVoices_r",
-        help="HuggingFace dataset name"
+        help="HuggingFace dataset name",
     )
     parser.add_argument(
         "--subset",
         type=str,
-        default="hindi",
-        help="Dataset subset/config (e.g., 'hindi' for IndicVoices_r)"
+        default="Hindi",
+        help="Dataset subset/config (e.g., 'hindi' for IndicVoices_r)",
     )
     parser.add_argument(
-        "--input-split",
-        type=str,
-        default="train",
-        help="Dataset split to load"
+        "--input-split", type=str, default="train", help="Dataset split to load"
     )
     parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="data",
-        help="Output directory"
+        "--output-dir", type=str, default="data", help="Output directory"
     )
     parser.add_argument(
-        "--train-ratio",
-        type=float,
-        default=0.7,
-        help="Training set ratio"
+        "--train-ratio", type=float, default=0.7, help="Training set ratio"
     )
     parser.add_argument(
-        "--val-ratio",
-        type=float,
-        default=0.15,
-        help="Validation set ratio"
+        "--val-ratio", type=float, default=0.15, help="Validation set ratio"
+    )
+    parser.add_argument("--test-ratio", type=float, default=0.15, help="Test set ratio")
+    parser.add_argument(
+        "--audio-column", type=str, default="audio", help="Name of audio column"
     )
     parser.add_argument(
-        "--test-ratio",
-        type=float,
-        default=0.15,
-        help="Test set ratio"
+        "--text-column", type=str, default="transcription", help="Name of text column"
+    )
+    parser.add_argument("--language", type=str, default="hi", help="Language code")
+    parser.add_argument(
+        "--sample-rate", type=int, default=16000, help="Target sample rate"
     )
     parser.add_argument(
-        "--audio-column",
-        type=str,
-        default="audio",
-        help="Name of audio column"
-    )
-    parser.add_argument(
-        "--text-column",
-        type=str,
-        default="transcription",
-        help="Name of text column"
-    )
-    parser.add_argument(
-        "--language",
-        type=str,
-        default="hi",
-        help="Language code"
-    )
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=16000,
-        help="Target sample rate"
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for splitting"
+        "--seed", type=int, default=42, help="Random seed for splitting"
     )
     parser.add_argument(
         "--streaming",
         action="store_true",
-        help="Use streaming mode (low memory, processes one sample at a time)"
+        help="Use streaming mode (low memory, processes one sample at a time)",
     )
     parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
-        help="Maximum number of samples to process (recommended with --streaming)"
+        help="Maximum number of samples to process (recommended with --streaming)",
     )
 
     args = parser.parse_args()
@@ -617,7 +592,9 @@ def main():
 
         # Cast audio column to use soundfile decoder (avoids torchcodec issues)
         logger.info("Casting audio column to use soundfile decoder...")
-        dataset = dataset.cast_column(args.audio_column, Audio(sampling_rate=args.sample_rate, decode=True))
+        dataset = dataset.cast_column(
+            args.audio_column, Audio(sampling_rate=args.sample_rate, decode=True)
+        )
         logger.info(f"Loaded {len(dataset)} samples")
 
         # Split dataset
@@ -627,15 +604,21 @@ def main():
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
             test_ratio=args.test_ratio,
-            seed=args.seed
+            seed=args.seed,
         )
 
-        logger.info(f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+        logger.info(
+            f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}"
+        )
 
         # Convert each split
         manifests = {}
 
-        for split_name, split_data in [("train", train_ds), ("val", val_ds), ("test", test_ds)]:
+        for split_name, split_data in [
+            ("train", train_ds),
+            ("val", val_ds),
+            ("test", test_ds),
+        ]:
             if len(split_data) > 0:
                 manifest_path = convert_dataset_to_nemo(
                     split_data,
@@ -644,7 +627,7 @@ def main():
                     audio_column=args.audio_column,
                     text_column=args.text_column,
                     language=args.language,
-                    target_sr=args.sample_rate
+                    target_sr=args.sample_rate,
                 )
                 manifests[split_name] = manifest_path
 
@@ -659,7 +642,7 @@ def main():
         print(f"  Samples: {stats['num_samples']}")
         print(f"  Duration: {stats['total_duration_hours']:.2f} hours")
         print(f"  Languages: {stats['languages']}")
-        if stats['missing_audio_files'] > 0:
+        if stats["missing_audio_files"] > 0:
             print(f"  WARNING: {stats['missing_audio_files']} missing audio files")
 
     print("=" * 60)
@@ -673,7 +656,7 @@ def main():
         "sample_rate": args.sample_rate,
         "streaming_mode": args.streaming,
         "max_samples": args.max_samples,
-        "splits": {}
+        "splits": {},
     }
 
     # Count samples from manifests
@@ -681,7 +664,7 @@ def main():
         stats = validate_manifest(manifest_path)
         info["splits"][split_name] = {
             "manifest": manifest_path,
-            "samples": stats.get("num_samples", 0)
+            "samples": stats.get("num_samples", 0),
         }
 
     info_path = Path(args.output_dir) / "conversion_info.json"
