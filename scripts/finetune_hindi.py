@@ -24,10 +24,10 @@ Prerequisites:
 
 # Disable Numba CUDA to avoid RTX 5090/Blackwell (sm_120) compatibility issues
 # Numba's CUDA JIT doesn't support sm_120 yet. PyTorch CUDA will still work.
+# Must be set BEFORE importing numba or any NeMo modules
 import os
-
-# Must be set BEFORE importing numba
 os.environ["NUMBA_DISABLE_CUDA"] = "1"
+os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
 
 import argparse
 import logging
@@ -37,12 +37,6 @@ from typing import Optional
 
 import torch
 import yaml
-
-import os
-
-# Use Numba's native CUDA binding to avoid nvJitLink compatibility issues
-os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
-os.environ["NUMBA_DISABLE_CUDA"] = "0"
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -312,8 +306,9 @@ def finetune_parakeet(
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
-    # Use bf16-mixed for RTX 5090 (more stable than fp16)
-    precision = trainer_config.get("precision", "bf16-mixed")
+    # Use 32-bit precision to avoid AMP issues with RNNT loss on RTX 5090
+    # Can switch to bf16-mixed once training is stable
+    precision = trainer_config.get("precision", "32")
     logger.info(f"Using precision: {precision}")
 
     trainer = pl.Trainer(
