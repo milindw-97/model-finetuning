@@ -6,13 +6,19 @@ This script converts a HuggingFace audio dataset to NeMo's JSON Lines
 manifest format, saving audio files and creating train/val/test splits.
 
 Usage:
+    # Standard mode (loads full dataset)
+    python scripts/convert_to_nemo.py \
+        --input-dataset ai4bharat/IndicVoices_r \
+        --subset hindi \
+        --output-dir data
+
+    # Streaming mode (low memory, processes one sample at a time)
     python scripts/convert_to_nemo.py \
         --input-dataset ai4bharat/IndicVoices_r \
         --subset hindi \
         --output-dir data \
-        --train-ratio 0.7 \
-        --val-ratio 0.15 \
-        --test-ratio 0.15
+        --streaming \
+        --max-samples 5000
 
 NeMo Manifest Format (one JSON per line):
     {"audio_filepath": "/path/to/audio.wav", "text": "transcription", "duration": 5.2, "lang": "hi"}
@@ -22,12 +28,13 @@ import argparse
 import json
 import logging
 import os
+import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import soundfile as sf
-from datasets import load_dataset, Dataset, Audio
+from datasets import load_dataset, Dataset, Audio, IterableDataset
 from tqdm import tqdm
 
 # Disable torchcodec to avoid FFmpeg linking issues
@@ -229,6 +236,205 @@ def convert_dataset_to_nemo(
     return str(manifest_path)
 
 
+def convert_streaming_to_nemo(
+    dataset_name: str,
+    subset: Optional[str],
+    input_split: str,
+    output_dir: str,
+    audio_column: str = "audio",
+    text_column: str = "transcription",
+    language: str = "hi",
+    target_sr: int = 16000,
+    max_duration: float = 30.0,
+    min_duration: float = 0.3,
+    train_ratio: float = 0.7,
+    val_ratio: float = 0.15,
+    test_ratio: float = 0.15,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+) -> Dict[str, str]:
+    """
+    Convert a HuggingFace dataset to NeMo format using streaming mode.
+
+    Processes one sample at a time to minimize memory and disk usage.
+    Randomly assigns each sample to train/val/test based on ratios.
+
+    Args:
+        dataset_name: HuggingFace dataset name
+        subset: Dataset subset/config
+        input_split: Dataset split to load
+        output_dir: Output directory
+        audio_column: Name of audio column
+        text_column: Name of text column
+        language: Language code
+        target_sr: Target sample rate
+        max_duration: Maximum audio duration
+        min_duration: Minimum audio duration
+        train_ratio: Ratio for training set
+        val_ratio: Ratio for validation set
+        test_ratio: Ratio for test set
+        max_samples: Maximum number of samples to process
+        seed: Random seed
+
+    Returns:
+        Dictionary mapping split names to manifest paths
+    """
+    random.seed(seed)
+
+    output_path = Path(output_dir)
+
+    # Create directories and open manifest files
+    splits = ["train", "val", "test"]
+    audio_dirs = {}
+    manifest_files = {}
+    counters = {"train": 0, "val": 0, "test": 0}
+    skipped = 0
+
+    for split in splits:
+        audio_dirs[split] = output_path / "audio" / split
+        audio_dirs[split].mkdir(parents=True, exist_ok=True)
+        manifest_files[split] = open(output_path / f"{split}_manifest.json", "w", encoding="utf-8")
+
+    # Load dataset in streaming mode
+    logger.info(f"Loading dataset in streaming mode: {dataset_name}")
+    if subset:
+        logger.info(f"Subset: {subset}")
+
+    try:
+        dataset = load_dataset(
+            dataset_name,
+            subset,
+            split=input_split,
+            streaming=True,
+            trust_remote_code=True,
+        )
+    except Exception as e:
+        logger.warning(f"Failed with subset, trying without: {e}")
+        dataset = load_dataset(
+            dataset_name,
+            split=input_split,
+            streaming=True,
+            trust_remote_code=True,
+        )
+
+    # Calculate cumulative thresholds for split assignment
+    train_threshold = train_ratio
+    val_threshold = train_ratio + val_ratio
+    # test is everything above val_threshold
+
+    logger.info(f"Processing samples (streaming mode, max_samples={max_samples})...")
+    logger.info(f"Split ratios - Train: {train_ratio}, Val: {val_ratio}, Test: {test_ratio}")
+
+    total_processed = 0
+
+    try:
+        for idx, sample in enumerate(tqdm(dataset, desc="Converting", total=max_samples)):
+            if max_samples and total_processed >= max_samples:
+                break
+
+            try:
+                # Get audio
+                audio = sample.get(audio_column)
+                if audio is None:
+                    skipped += 1
+                    continue
+
+                if isinstance(audio, dict):
+                    array = np.array(audio['array'])
+                    sr = audio.get('sampling_rate', 16000)
+                else:
+                    skipped += 1
+                    continue
+
+                # Resample if needed
+                if sr != target_sr:
+                    array = resample_audio(array, sr, target_sr)
+
+                # Calculate duration
+                duration = len(array) / target_sr
+
+                # Filter by duration
+                if duration < min_duration or duration > max_duration:
+                    skipped += 1
+                    continue
+
+                # Get transcription - try multiple possible column names
+                text = None
+                for col in [text_column, "transcription", "text", "sentence", "transcript"]:
+                    if col in sample and sample.get(col):
+                        text = sample.get(col)
+                        break
+
+                if not text or not str(text).strip():
+                    skipped += 1
+                    continue
+
+                text = str(text).strip()
+
+                # Randomly assign to split
+                rand_val = random.random()
+                if rand_val < train_threshold:
+                    split = "train"
+                elif rand_val < val_threshold:
+                    split = "val"
+                else:
+                    split = "test"
+
+                # Save audio file
+                audio_filename = f"{split}_{counters[split]:06d}.wav"
+                audio_filepath = audio_dirs[split] / audio_filename
+
+                # Ensure mono
+                if len(array.shape) > 1:
+                    array = array.mean(axis=-1)
+
+                # Normalize to float32 [-1, 1]
+                if array.dtype != np.float32:
+                    if np.issubdtype(array.dtype, np.integer):
+                        max_val = np.iinfo(array.dtype).max
+                        array = array.astype(np.float32) / max_val
+                    else:
+                        array = array.astype(np.float32)
+
+                # Save as WAV
+                sf.write(str(audio_filepath), array, target_sr)
+
+                # Write manifest entry immediately
+                entry = {
+                    "audio_filepath": str(audio_filepath.absolute()),
+                    "text": text,
+                    "duration": round(duration, 3),
+                    "lang": language
+                }
+                manifest_files[split].write(json.dumps(entry, ensure_ascii=False) + '\n')
+                manifest_files[split].flush()  # Flush to disk immediately
+
+                counters[split] += 1
+                total_processed += 1
+
+            except Exception as e:
+                logger.warning(f"Error processing sample {idx}: {e}")
+                skipped += 1
+                continue
+
+    finally:
+        # Close all manifest files
+        for split in splits:
+            manifest_files[split].close()
+
+    # Log results
+    logger.info(f"\nConversion complete!")
+    logger.info(f"  Total processed: {total_processed}")
+    logger.info(f"  Skipped: {skipped}")
+    for split in splits:
+        logger.info(f"  {split}: {counters[split]} samples")
+
+    return {
+        split: str(output_path / f"{split}_manifest.json")
+        for split in splits
+    }
+
+
 def validate_manifest(manifest_path: str) -> Dict:
     """
     Validate a NeMo manifest file and return statistics.
@@ -352,60 +558,95 @@ def main():
         default=42,
         help="Random seed for splitting"
     )
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Use streaming mode (low memory, processes one sample at a time)"
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Maximum number of samples to process (recommended with --streaming)"
+    )
 
     args = parser.parse_args()
 
-    # Load dataset
-    logger.info(f"Loading dataset: {args.input_dataset}")
-    if args.subset:
-        logger.info(f"Subset: {args.subset}")
-    try:
-        dataset = load_dataset(
-            args.input_dataset,
-            args.subset,
-            split=args.input_split,
-            trust_remote_code=True,
+    # Use streaming mode if requested
+    if args.streaming:
+        logger.info("Using STREAMING mode (low memory)")
+        manifests = convert_streaming_to_nemo(
+            dataset_name=args.input_dataset,
+            subset=args.subset,
+            input_split=args.input_split,
+            output_dir=args.output_dir,
+            audio_column=args.audio_column,
+            text_column=args.text_column,
+            language=args.language,
+            target_sr=args.sample_rate,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            max_samples=args.max_samples,
+            seed=args.seed,
         )
-    except Exception as e:
-        logger.warning(f"Failed with subset, trying without: {e}")
-        dataset = load_dataset(
-            args.input_dataset,
-            split=args.input_split,
-            trust_remote_code=True,
-        )
-
-    # Cast audio column to use soundfile decoder (avoids torchcodec issues)
-    logger.info("Casting audio column to use soundfile decoder...")
-    dataset = dataset.cast_column(args.audio_column, Audio(sampling_rate=args.sample_rate, decode=True))
-    logger.info(f"Loaded {len(dataset)} samples")
-
-    # Split dataset
-    logger.info("Splitting dataset...")
-    train_ds, val_ds, test_ds = split_dataset(
-        dataset,
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        test_ratio=args.test_ratio,
-        seed=args.seed
-    )
-
-    logger.info(f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
-
-    # Convert each split
-    manifests = {}
-
-    for split_name, split_data in [("train", train_ds), ("val", val_ds), ("test", test_ds)]:
-        if len(split_data) > 0:
-            manifest_path = convert_dataset_to_nemo(
-                split_data,
-                args.output_dir,
-                split_name,
-                audio_column=args.audio_column,
-                text_column=args.text_column,
-                language=args.language,
-                target_sr=args.sample_rate
+    else:
+        # Standard mode - load full dataset
+        logger.info(f"Loading dataset: {args.input_dataset}")
+        if args.subset:
+            logger.info(f"Subset: {args.subset}")
+        try:
+            dataset = load_dataset(
+                args.input_dataset,
+                args.subset,
+                split=args.input_split,
+                trust_remote_code=True,
             )
-            manifests[split_name] = manifest_path
+        except Exception as e:
+            logger.warning(f"Failed with subset, trying without: {e}")
+            dataset = load_dataset(
+                args.input_dataset,
+                split=args.input_split,
+                trust_remote_code=True,
+            )
+
+        # Limit samples if specified
+        if args.max_samples and len(dataset) > args.max_samples:
+            dataset = dataset.select(range(args.max_samples))
+            logger.info(f"Limited to {args.max_samples} samples")
+
+        # Cast audio column to use soundfile decoder (avoids torchcodec issues)
+        logger.info("Casting audio column to use soundfile decoder...")
+        dataset = dataset.cast_column(args.audio_column, Audio(sampling_rate=args.sample_rate, decode=True))
+        logger.info(f"Loaded {len(dataset)} samples")
+
+        # Split dataset
+        logger.info("Splitting dataset...")
+        train_ds, val_ds, test_ds = split_dataset(
+            dataset,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            seed=args.seed
+        )
+
+        logger.info(f"Split sizes - Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+
+        # Convert each split
+        manifests = {}
+
+        for split_name, split_data in [("train", train_ds), ("val", val_ds), ("test", test_ds)]:
+            if len(split_data) > 0:
+                manifest_path = convert_dataset_to_nemo(
+                    split_data,
+                    args.output_dir,
+                    split_name,
+                    audio_column=args.audio_column,
+                    text_column=args.text_column,
+                    language=args.language,
+                    target_sr=args.sample_rate
+                )
+                manifests[split_name] = manifest_path
 
     # Validate manifests
     print("\n" + "=" * 60)
@@ -430,12 +671,18 @@ def main():
         "source_split": args.input_split,
         "language": args.language,
         "sample_rate": args.sample_rate,
-        "splits": {
-            "train": {"manifest": manifests.get("train"), "samples": len(train_ds)},
-            "val": {"manifest": manifests.get("val"), "samples": len(val_ds)},
-            "test": {"manifest": manifests.get("test"), "samples": len(test_ds)}
-        }
+        "streaming_mode": args.streaming,
+        "max_samples": args.max_samples,
+        "splits": {}
     }
+
+    # Count samples from manifests
+    for split_name, manifest_path in manifests.items():
+        stats = validate_manifest(manifest_path)
+        info["splits"][split_name] = {
+            "manifest": manifest_path,
+            "samples": stats.get("num_samples", 0)
+        }
 
     info_path = Path(args.output_dir) / "conversion_info.json"
     with open(info_path, "w") as f:
