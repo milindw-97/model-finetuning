@@ -255,11 +255,12 @@ def finetune_parakeet(
             cfg.spec_augment.freq_width = spec_aug_config.get("freq_width", 27)
             cfg.spec_augment.time_width = spec_aug_config.get("time_width", 0.05)
 
-        # Use torchaudio RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
+        # Use PyTorch-native RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
         # Numba CUDA kernels don't support sm_120 (Blackwell) yet
+        # Valid options: warprnnt, warprnnt_numba, pytorch, default, tdt, tdt_pytorch
         if hasattr(cfg, "loss"):
-            cfg.loss.loss_name = "torchaudio"
-            logger.info("Using torchaudio RNNT loss (RTX 5090/Blackwell compatible)")
+            cfg.loss.loss_name = "pytorch"
+            logger.info("Using pytorch RNNT loss (RTX 5090/Blackwell compatible)")
 
     model.cfg = cfg
 
