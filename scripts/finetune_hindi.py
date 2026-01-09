@@ -149,6 +149,9 @@ def finetune_parakeet(
     from nemo.utils.exp_manager import exp_manager
     from omegaconf import OmegaConf, open_dict
 
+    # Set precision for Tensor Cores (RTX 5090)
+    torch.set_float32_matmul_precision('high')
+
     # Apply command line overrides
     if train_manifest:
         config["train_ds"]["manifest_filepath"] = train_manifest
@@ -272,24 +275,24 @@ def finetune_parakeet(
 
         # Use PyTorch-native RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
         # Numba CUDA kernels don't support sm_120 (Blackwell) yet
-        # Valid options: warprnnt, warprnnt_numba, pytorch, default, tdt, tdt_pytorch
-        if hasattr(cfg, "loss"):
-            cfg.loss.loss_name = "pytorch"
-            logger.info("Using pytorch RNNT loss (RTX 5090/Blackwell compatible)")
+        # Completely replace loss config
+        cfg.loss = OmegaConf.create({
+            "loss_name": "pytorch",
+            "reduction": "mean_batch",
+        })
+        logger.info("Using pytorch RNNT loss (RTX 5090/Blackwell compatible)")
 
     model.cfg = cfg
 
-    # Rebuild the loss module with the new config (required for loss_name change to take effect)
-    if hasattr(model, "loss") and hasattr(cfg, "loss"):
-        from nemo.collections.asr.losses.rnnt import RNNTLoss
-        loss_kwargs = OmegaConf.to_container(cfg.loss.get("loss_kwargs", {})) if cfg.loss.get("loss_kwargs") else {}
-        model.loss = RNNTLoss(
-            num_classes=model.joint.num_classes_with_blank - 1,
-            loss_name=cfg.loss.loss_name,
-            loss_kwargs=loss_kwargs,
-            reduction=cfg.loss.get("reduction", "mean_batch"),
-        )
-        logger.info(f"Rebuilt loss module with: {cfg.loss.loss_name}")
+    # Rebuild the loss module with pytorch loss (required for RTX 5090/Blackwell)
+    from nemo.collections.asr.losses.rnnt import RNNTLoss
+    model.loss = RNNTLoss(
+        num_classes=model.joint.num_classes_with_blank - 1,
+        loss_name="pytorch",
+        loss_kwargs={},
+        reduction="mean_batch",
+    )
+    logger.info("Rebuilt loss module with: pytorch")
 
     logger.info("Model configuration updated for fine-tuning")
 
@@ -309,11 +312,15 @@ def finetune_parakeet(
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
+    # Use bf16-mixed for RTX 5090 (more stable than fp16)
+    precision = trainer_config.get("precision", "bf16-mixed")
+    logger.info(f"Using precision: {precision}")
+
     trainer = pl.Trainer(
         devices=trainer_config.get("devices", 1),
         accelerator=trainer_config.get("accelerator", "gpu"),
         max_epochs=trainer_config.get("max_epochs", 100),
-        precision=trainer_config.get("precision", "16-mixed"),
+        precision=precision,
         accumulate_grad_batches=trainer_config.get("accumulate_grad_batches", 4),
         gradient_clip_val=trainer_config.get("gradient_clip_val", 1.0),
         log_every_n_steps=trainer_config.get("log_every_n_steps", 10),
