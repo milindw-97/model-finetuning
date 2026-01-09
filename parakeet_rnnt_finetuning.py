@@ -835,6 +835,84 @@ def get_example_config_multilingual():
 
 
 # ==============================================================================
+# GPU-SPECIFIC CONFIGURATIONS
+# ==============================================================================
+
+def get_config_rtx5090():
+    """Optimized config for RTX 5090 (32GB VRAM)."""
+    return Config(
+        data=DataConfig(
+            train_batch_size=20,      # 32GB allows larger batches
+            val_batch_size=20,
+            num_workers=4,
+            max_duration=20.0,
+        ),
+        training=TrainingConfig(
+            precision="16-mixed",      # RTX 5090 uses FP16 (no BF16)
+            accumulate_grad_batches=2, # effective batch = 40
+            max_epochs=50,
+            learning_rate=1e-4,
+            warmup_steps=1000,
+        )
+    )
+
+
+def get_config_a100():
+    """Optimized config for A100 (40GB/80GB VRAM)."""
+    return Config(
+        data=DataConfig(
+            train_batch_size=24,      # More VRAM headroom
+            val_batch_size=24,
+            num_workers=8,            # A100 servers have more CPU
+            max_duration=20.0,
+        ),
+        training=TrainingConfig(
+            precision="bf16-mixed",    # A100 supports BF16
+            accumulate_grad_batches=2, # effective batch = 48
+            max_epochs=50,
+            learning_rate=1e-4,
+            warmup_steps=1000,
+        )
+    )
+
+
+def get_config_h100():
+    """Optimized config for H100 (80GB VRAM)."""
+    return Config(
+        data=DataConfig(
+            train_batch_size=32,      # H100 80GB allows larger batches
+            val_batch_size=32,
+            num_workers=8,            # H100 servers have more CPU
+            max_duration=20.0,
+        ),
+        training=TrainingConfig(
+            precision="bf16-mixed",    # H100 supports BF16 (and FP8)
+            accumulate_grad_batches=2, # effective batch = 64
+            max_epochs=50,
+            learning_rate=1e-4,
+            warmup_steps=1000,
+        )
+    )
+
+
+def detect_gpu_type():
+    """Auto-detect GPU type from CUDA device name."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0).lower()
+            if '5090' in name:
+                return 'rtx5090'
+            elif 'h100' in name:
+                return 'h100'
+            elif 'a100' in name:
+                return 'a100'
+    except Exception:
+        pass
+    return 'rtx5090'  # Default to RTX 5090 settings
+
+
+# ==============================================================================
 # CLI & MAIN
 # ==============================================================================
 
@@ -862,7 +940,9 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--freeze-encoder', action='store_true', help='Freeze encoder layers')
     parser.add_argument('--resume', type=str, help='Resume from checkpoint')
-    
+    parser.add_argument('--gpu', type=str, choices=['rtx5090', 'a100', 'h100', 'auto'],
+                        default='auto', help='GPU type for optimized settings (rtx5090, a100, h100, auto)')
+
     # Eval/Transcribe arguments
     parser.add_argument('--model-path', type=str, help='Path to .nemo model for eval/transcribe')
     parser.add_argument('--audio', type=str, nargs='+', help='Audio file(s) to transcribe')
@@ -889,28 +969,42 @@ def main():
     args = parse_args()
     
     if args.mode == 'train':
-        # Create configuration
-        config = Config(
-            data=DataConfig(
-                train_manifest=args.train_manifest or "./data/train_manifest.json",
-                val_manifest=args.val_manifest or "./data/val_manifest.json",
-                test_manifest=args.test_manifest,
-                train_batch_size=args.batch_size,
-                val_batch_size=args.batch_size,
-            ),
-            training=TrainingConfig(
-                output_dir=args.output_dir,
-                max_epochs=args.epochs,
-                learning_rate=args.lr,
-                freeze_encoder=args.freeze_encoder,
-                resume_from_checkpoint=args.resume,
-            )
-        )
-        
+        # Get GPU-specific base config
+        gpu_type = args.gpu if args.gpu != 'auto' else detect_gpu_type()
+
+        if gpu_type == 'h100':
+            config = get_config_h100()
+            print(f"Using H100 optimized settings (BF16, batch=32)")
+        elif gpu_type == 'a100':
+            config = get_config_a100()
+            print(f"Using A100 optimized settings (BF16, batch=24)")
+        else:
+            config = get_config_rtx5090()
+            print(f"Using RTX 5090 optimized settings (FP16, batch=20)")
+
+        # Override with CLI arguments if provided
+        config.data.train_manifest = args.train_manifest or "./data/train_manifest.json"
+        config.data.val_manifest = args.val_manifest or "./data/val_manifest.json"
+        if args.test_manifest:
+            config.data.test_manifest = args.test_manifest
+        if args.output_dir != './outputs':
+            config.training.output_dir = args.output_dir
+        if args.epochs != 50:
+            config.training.max_epochs = args.epochs
+        if args.batch_size != 16:
+            config.data.train_batch_size = args.batch_size
+            config.data.val_batch_size = args.batch_size
+        if args.lr != 1e-4:
+            config.training.learning_rate = args.lr
+        if args.freeze_encoder:
+            config.training.freeze_encoder = True
+        if args.resume:
+            config.training.resume_from_checkpoint = args.resume
+
         # Run training
         finetuner = ParakeetRNNTFineTuner(config)
         model = finetuner.train()
-        
+
         # Evaluate if test manifest provided
         if config.data.test_manifest:
             finetuner.evaluate()
