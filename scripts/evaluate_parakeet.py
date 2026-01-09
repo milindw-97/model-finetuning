@@ -22,13 +22,13 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import nemo.collections.asr as nemo_asr
 
 import torch
 from tqdm import tqdm
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -43,14 +43,15 @@ def load_model(model_path: str):
     Returns:
         Loaded model
     """
-    import nemo.collections.asr as nemo_asr
 
-    if Path(model_path).exists() and model_path.endswith('.nemo'):
+    if Path(model_path).exists() and model_path.endswith(".nemo"):
         logger.info(f"Loading model from: {model_path}")
         model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(model_path)
     else:
         logger.info(f"Loading pre-trained model: {model_path}")
-        model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name=model_path)
+        model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(
+            model_name=model_path
+        )
 
     model.eval()
 
@@ -72,7 +73,7 @@ def load_test_data(manifest_path: str) -> List[Dict]:
     """
     samples = []
 
-    with open(manifest_path, 'r', encoding='utf-8') as f:
+    with open(manifest_path, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 sample = json.loads(line.strip())
@@ -97,6 +98,7 @@ def compute_wer(predictions: List[str], references: List[str]) -> float:
     """
     try:
         from jiwer import wer
+
         return wer(references, predictions)
     except ImportError:
         # Fallback implementation
@@ -142,6 +144,7 @@ def compute_cer(predictions: List[str], references: List[str]) -> float:
     """
     try:
         from jiwer import cer
+
         return cer(references, predictions)
     except ImportError:
         # Fallback: character-level WER
@@ -174,10 +177,10 @@ def compute_cer(predictions: List[str], references: List[str]) -> float:
 
 
 def evaluate_model(
-    model,
+    model: nemo_asr.models.EncDecRNNTBPEModel,
     test_samples: List[Dict],
     batch_size: int = 4,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
 ) -> Tuple[Dict[str, float], List[Dict]]:
     """
     Evaluate model on test samples.
@@ -199,28 +202,30 @@ def evaluate_model(
     detailed_results = []
 
     # Process in batches
-    audio_paths = [s['audio_filepath'] for s in test_samples]
+    audio_paths = [s["audio_filepath"] for s in test_samples]
 
     logger.info(f"Transcribing {len(audio_paths)} audio files...")
 
     for i in tqdm(range(0, len(audio_paths), batch_size), desc="Evaluating"):
-        batch_paths = audio_paths[i:i + batch_size]
-        batch_samples = test_samples[i:i + batch_size]
+        batch_paths = audio_paths[i : i + batch_size]
+        batch_samples = test_samples[i : i + batch_size]
 
         try:
-            transcriptions = model.transcribe(paths2audio_files=batch_paths, batch_size=batch_size)
+            transcriptions = model.transcribe(audio=batch_paths, batch_size=batch_size)
 
             for j, (trans, sample) in enumerate(zip(transcriptions, batch_samples)):
-                reference = sample.get('text', '')
+                reference = sample.get("text", "")
                 predictions.append(trans)
                 references.append(reference)
 
-                detailed_results.append({
-                    'audio_filepath': sample['audio_filepath'],
-                    'reference': reference,
-                    'prediction': trans,
-                    'duration': sample.get('duration', 0)
-                })
+                detailed_results.append(
+                    {
+                        "audio_filepath": sample["audio_filepath"],
+                        "reference": reference,
+                        "prediction": trans,
+                        "duration": sample.get("duration", 0),
+                    }
+                )
 
         except Exception as e:
             logger.warning(f"Error processing batch {i}: {e}")
@@ -228,9 +233,9 @@ def evaluate_model(
 
     # Compute metrics
     metrics = {
-        'wer': compute_wer(predictions, references),
-        'cer': compute_cer(predictions, references),
-        'num_samples': len(predictions)
+        "wer": compute_wer(predictions, references),
+        "cer": compute_cer(predictions, references),
+        "num_samples": len(predictions),
     }
 
     return metrics, detailed_results
@@ -257,40 +262,29 @@ def main():
         "--model",
         type=str,
         required=True,
-        help="Path to fine-tuned .nemo model or model name"
+        help="Path to fine-tuned .nemo model or model name",
     )
     parser.add_argument(
         "--test-manifest",
         type=str,
         default="data/test_manifest.json",
-        help="Path to test manifest file"
+        help="Path to test manifest file",
     )
     parser.add_argument(
-        "--baseline",
-        type=str,
-        help="Optional: baseline model to compare against"
+        "--baseline", type=str, help="Optional: baseline model to compare against"
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=4,
-        help="Batch size for inference"
+        "--batch-size", type=int, default=4, help="Batch size for inference"
     )
     parser.add_argument(
-        "--max-samples",
-        type=int,
-        help="Maximum number of samples to evaluate"
+        "--max-samples", type=int, help="Maximum number of samples to evaluate"
     )
-    parser.add_argument(
-        "--output",
-        type=str,
-        help="Path to save detailed results JSON"
-    )
+    parser.add_argument("--output", type=str, help="Path to save detailed results JSON")
     parser.add_argument(
         "--show-samples",
         type=int,
         default=5,
-        help="Number of sample transcriptions to display"
+        help="Number of sample transcriptions to display",
     )
 
     args = parser.parse_args()
@@ -313,10 +307,7 @@ def main():
 
     logger.info("Evaluating fine-tuned model...")
     metrics, results = evaluate_model(
-        model,
-        test_samples,
-        batch_size=args.batch_size,
-        max_samples=args.max_samples
+        model, test_samples, batch_size=args.batch_size, max_samples=args.max_samples
     )
 
     # Print results
@@ -326,8 +317,12 @@ def main():
     print(f"\nModel: {args.model}")
     print(f"Test set: {args.test_manifest}")
     print(f"Samples evaluated: {metrics['num_samples']}")
-    print(f"\nWord Error Rate (WER):      {metrics['wer']:.4f} ({metrics['wer']*100:.2f}%)")
-    print(f"Character Error Rate (CER): {metrics['cer']:.4f} ({metrics['cer']*100:.2f}%)")
+    print(
+        f"\nWord Error Rate (WER):      {metrics['wer']:.4f} ({metrics['wer'] * 100:.2f}%)"
+    )
+    print(
+        f"Character Error Rate (CER): {metrics['cer']:.4f} ({metrics['cer'] * 100:.2f}%)"
+    )
 
     # Evaluate baseline if specified
     if args.baseline:
@@ -339,24 +334,34 @@ def main():
             baseline_model,
             test_samples,
             batch_size=args.batch_size,
-            max_samples=args.max_samples
+            max_samples=args.max_samples,
         )
 
         print(f"\n--- BASELINE COMPARISON ---")
         print(f"Baseline: {args.baseline}")
-        print(f"Baseline WER: {baseline_metrics['wer']:.4f} ({baseline_metrics['wer']*100:.2f}%)")
-        print(f"Baseline CER: {baseline_metrics['cer']:.4f} ({baseline_metrics['cer']*100:.2f}%)")
+        print(
+            f"Baseline WER: {baseline_metrics['wer']:.4f} ({baseline_metrics['wer'] * 100:.2f}%)"
+        )
+        print(
+            f"Baseline CER: {baseline_metrics['cer']:.4f} ({baseline_metrics['cer'] * 100:.2f}%)"
+        )
 
-        wer_improvement = baseline_metrics['wer'] - metrics['wer']
-        cer_improvement = baseline_metrics['cer'] - metrics['cer']
+        wer_improvement = baseline_metrics["wer"] - metrics["wer"]
+        cer_improvement = baseline_metrics["cer"] - metrics["cer"]
 
-        print(f"\nWER Improvement: {wer_improvement:.4f} ({wer_improvement*100:.2f}%)")
-        print(f"CER Improvement: {cer_improvement:.4f} ({cer_improvement*100:.2f}%)")
+        print(
+            f"\nWER Improvement: {wer_improvement:.4f} ({wer_improvement * 100:.2f}%)"
+        )
+        print(f"CER Improvement: {cer_improvement:.4f} ({cer_improvement * 100:.2f}%)")
 
         if wer_improvement > 0:
-            print(f"\nFine-tuned model is {wer_improvement/baseline_metrics['wer']*100:.1f}% better (WER)")
+            print(
+                f"\nFine-tuned model is {wer_improvement / baseline_metrics['wer'] * 100:.1f}% better (WER)"
+            )
         else:
-            print(f"\nFine-tuned model is {-wer_improvement/baseline_metrics['wer']*100:.1f}% worse (WER)")
+            print(
+                f"\nFine-tuned model is {-wer_improvement / baseline_metrics['wer'] * 100:.1f}% worse (WER)"
+            )
 
     print("=" * 60)
 
@@ -367,13 +372,13 @@ def main():
     # Save detailed results
     if args.output:
         output_data = {
-            'model': args.model,
-            'test_manifest': args.test_manifest,
-            'metrics': metrics,
-            'detailed_results': results
+            "model": args.model,
+            "test_manifest": args.test_manifest,
+            "metrics": metrics,
+            "detailed_results": results,
         }
 
-        with open(args.output, 'w', encoding='utf-8') as f:
+        with open(args.output, "w", encoding="utf-8") as f:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
 
         logger.info(f"\nDetailed results saved to: {args.output}")
