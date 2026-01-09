@@ -7,8 +7,9 @@ and prepares it for conversion to NeMo format.
 
 Usage:
     python scripts/download_dataset.py --output-dir data/raw
+    python scripts/download_dataset.py --dataset ai4bharat/IndicVoices_r --subset hindi --split train
 
-Dataset: sivakgp/hindi-books-audio-validation
+Dataset: ai4bharat/IndicVoices_r (Hindi subset)
 """
 
 import argparse
@@ -29,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 def download_hindi_dataset(
     output_dir: str = "data/raw",
-    dataset_name: str = "sivakgp/hindi-books-audio-validation",
-    split: str = "validation",
+    dataset_name: str = "ai4bharat/IndicVoices_r",
+    subset: Optional[str] = "hindi",
+    split: str = "train",
     max_samples: Optional[int] = None
 ) -> Dataset:
     """
@@ -39,6 +41,7 @@ def download_hindi_dataset(
     Args:
         output_dir: Directory to save dataset info
         dataset_name: HuggingFace dataset identifier
+        subset: Dataset subset/config (e.g., "hindi" for IndicVoices_r)
         split: Dataset split to download
         max_samples: Optional limit on number of samples
 
@@ -49,11 +52,14 @@ def download_hindi_dataset(
     output_path.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Downloading dataset: {dataset_name}")
+    if subset:
+        logger.info(f"Subset: {subset}")
     logger.info(f"Split: {split}")
 
     # Load dataset
     dataset = load_dataset(
         dataset_name,
+        subset,
         split=split,
         trust_remote_code=True
     )
@@ -69,6 +75,7 @@ def download_hindi_dataset(
     # Save dataset info
     info = {
         "dataset_name": dataset_name,
+        "subset": subset,
         "split": split,
         "num_samples": len(dataset),
         "columns": dataset.column_names,
@@ -82,11 +89,17 @@ def download_hindi_dataset(
     logger.info(f"Dataset info saved to: {info_path}")
 
     # Print sample transcription (text only, avoid audio decoding issues)
+    # Different datasets use different column names for transcription
+    text_columns = ['transcription', 'text', 'sentence', 'transcript']
     if len(dataset) > 0:
         try:
-            # Access raw data without decoding audio
-            sample_text = dataset[0]['transcription'] if 'transcription' in dataset.column_names else 'N/A'
-            logger.info(f"\nSample transcription: {sample_text[:100]}...")
+            # Find the text column
+            sample_text = 'N/A'
+            for col in text_columns:
+                if col in dataset.column_names:
+                    sample_text = dataset[0][col]
+                    break
+            logger.info(f"\nSample transcription: {sample_text[:100] if sample_text else 'N/A'}...")
         except Exception as e:
             logger.warning(f"Could not preview sample: {e}")
 
@@ -127,8 +140,12 @@ def analyze_dataset(dataset: Dataset) -> dict:
             stats["min_duration"] = min(stats["min_duration"], duration)
             stats["max_duration"] = max(stats["max_duration"], duration)
 
-        # Get text length
-        text = sample.get("transcription", "")
+        # Get text length (check multiple possible column names)
+        text = ""
+        for col in ["transcription", "text", "sentence", "transcript"]:
+            if col in sample:
+                text = sample.get(col, "")
+                break
         total_text_len += len(text)
 
     if stats["min_duration"] == float('inf'):
@@ -153,13 +170,19 @@ def main():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="sivakgp/hindi-books-audio-validation",
+        default="ai4bharat/IndicVoices_r",
         help="HuggingFace dataset name"
+    )
+    parser.add_argument(
+        "--subset",
+        type=str,
+        default="hindi",
+        help="Dataset subset/config (e.g., 'hindi' for IndicVoices_r)"
     )
     parser.add_argument(
         "--split",
         type=str,
-        default="validation",
+        default="train",
         help="Dataset split to download"
     )
     parser.add_argument(
@@ -180,6 +203,7 @@ def main():
     dataset = download_hindi_dataset(
         output_dir=args.output_dir,
         dataset_name=args.dataset,
+        subset=args.subset,
         split=args.split,
         max_samples=args.max_samples
     )
@@ -204,7 +228,7 @@ def main():
         print(f"\nStatistics saved to: {stats_path}")
 
     print(f"\nDataset ready for conversion.")
-    print(f"Next step: python scripts/convert_to_nemo.py --input-dataset {args.dataset}")
+    print(f"Next step: python scripts/convert_to_nemo.py --input-dataset {args.dataset} --subset {args.subset}")
 
 
 if __name__ == "__main__":

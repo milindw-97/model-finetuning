@@ -126,6 +126,7 @@ def finetune_parakeet(
     learning_rate: Optional[float] = None,
     freeze_encoder: Optional[bool] = None,
     resume_from: Optional[str] = None,
+    model_path: Optional[str] = None,
 ):
     """
     Fine-tune Parakeet RNNT on Hindi data.
@@ -141,6 +142,7 @@ def finetune_parakeet(
         learning_rate: Override learning rate
         freeze_encoder: Override encoder freezing
         resume_from: Path to checkpoint to resume from
+        model_path: Path to local .nemo model file to use as base model
     """
     import nemo.collections.asr as nemo_asr
     import lightning.pytorch as pl
@@ -186,14 +188,14 @@ def finetune_parakeet(
 
     # Load pre-trained model
     model_name = config.get("model", {}).get("pretrained_name", "parakeet-rnnt-1.1b")
-    model_path = config.get("model", {}).get("pretrained_path")
+    # CLI model_path takes precedence over config
+    local_model_path = model_path or config.get("model", {}).get("pretrained_path")
 
-    logger.info(f"Loading pre-trained model: {model_name}")
-
-    if model_path and Path(model_path).exists():
-        logger.info(f"Loading from local path: {model_path}")
-        model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(model_path)
+    if local_model_path and Path(local_model_path).exists():
+        logger.info(f"Loading from local .nemo file: {local_model_path}")
+        model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(local_model_path)
     else:
+        logger.info(f"Loading pre-trained model from HuggingFace: {model_name}")
         model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(
             model_name=model_name
         )
@@ -345,7 +347,7 @@ def finetune_parakeet(
     print("\n" + "=" * 60)
     print("STARTING HINDI FINE-TUNING")
     print("=" * 60)
-    print(f"Model: {model_name}")
+    print(f"Model: {local_model_path if local_model_path else model_name}")
     print(f"Train manifest: {config['train_ds']['manifest_filepath']}")
     print(f"Val manifest: {config['validation_ds']['manifest_filepath']}")
     print(f"Batch size: {config['train_ds'].get('batch_size', 4)}")
@@ -409,6 +411,9 @@ def main():
         "--no-freeze-encoder", action="store_true", help="Don't freeze encoder layers"
     )
     parser.add_argument("--resume", type=str, help="Resume from checkpoint")
+    parser.add_argument(
+        "--model-path", type=str, help="Path to local .nemo model file to use as base model"
+    )
 
     args = parser.parse_args()
 
@@ -444,6 +449,7 @@ def main():
         learning_rate=args.lr,
         freeze_encoder=freeze_encoder,
         resume_from=args.resume,
+        model_path=args.model_path,
     )
 
 

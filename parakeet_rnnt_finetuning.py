@@ -998,9 +998,9 @@ def parse_args():
         help="GPU type for optimized settings (rtx5090, a100, h100, auto)",
     )
 
-    # Eval/Transcribe arguments
+    # Model path argument (used for training base model, eval, or transcribe)
     parser.add_argument(
-        "--model-path", type=str, help="Path to .nemo model for eval/transcribe"
+        "--model-path", type=str, help="Path to local .nemo model (base model for training, or model for eval/transcribe)"
     )
     parser.add_argument(
         "--audio", type=str, nargs="+", help="Audio file(s) to transcribe"
@@ -1061,6 +1061,8 @@ def main():
             config.training.freeze_encoder = True
         if args.resume:
             config.training.resume_from_checkpoint = args.resume
+        if args.model_path:
+            config.training.pretrained_model = args.model_path
 
         # Run training
         finetuner = ParakeetRNNTFineTuner(config)

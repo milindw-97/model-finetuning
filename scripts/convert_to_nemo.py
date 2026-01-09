@@ -7,7 +7,8 @@ manifest format, saving audio files and creating train/val/test splits.
 
 Usage:
     python scripts/convert_to_nemo.py \
-        --input-dataset sivakgp/hindi-books-audio-validation \
+        --input-dataset ai4bharat/IndicVoices_r \
+        --subset hindi \
         --output-dir data \
         --train-ratio 0.7 \
         --val-ratio 0.15 \
@@ -282,13 +283,19 @@ def main():
     parser.add_argument(
         "--input-dataset",
         type=str,
-        default="sivakgp/hindi-books-audio-validation",
+        default="ai4bharat/IndicVoices_r",
         help="HuggingFace dataset name"
+    )
+    parser.add_argument(
+        "--subset",
+        type=str,
+        default="hindi",
+        help="Dataset subset/config (e.g., 'hindi' for IndicVoices_r)"
     )
     parser.add_argument(
         "--input-split",
         type=str,
-        default="validation",
+        default="train",
         help="Dataset split to load"
     )
     parser.add_argument(
@@ -350,16 +357,21 @@ def main():
 
     # Load dataset
     logger.info(f"Loading dataset: {args.input_dataset}")
+    if args.subset:
+        logger.info(f"Subset: {args.subset}")
     try:
         dataset = load_dataset(
             args.input_dataset,
+            args.subset,
             split=args.input_split,
+            trust_remote_code=True,
         )
     except Exception as e:
-        logger.warning(f"Failed with default settings, trying without trust_remote_code: {e}")
+        logger.warning(f"Failed with subset, trying without: {e}")
         dataset = load_dataset(
             args.input_dataset,
             split=args.input_split,
+            trust_remote_code=True,
         )
 
     # Cast audio column to use soundfile decoder (avoids torchcodec issues)
@@ -414,6 +426,7 @@ def main():
     # Save conversion info
     info = {
         "source_dataset": args.input_dataset,
+        "source_subset": args.subset,
         "source_split": args.input_split,
         "language": args.language,
         "sample_rate": args.sample_rate,
