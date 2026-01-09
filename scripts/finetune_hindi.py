@@ -25,6 +25,8 @@ Prerequisites:
 # Disable Numba CUDA to avoid RTX 5090/Blackwell (sm_120) compatibility issues
 # Numba's CUDA JIT doesn't support sm_120 yet. PyTorch CUDA will still work.
 import os
+
+# Must be set BEFORE importing numba
 os.environ["NUMBA_DISABLE_CUDA"] = "1"
 
 import argparse
