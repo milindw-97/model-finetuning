@@ -219,48 +219,48 @@ def finetune_parakeet(
     cfg = model.cfg
 
     with open_dict(cfg):
-        # Training data
-        cfg.train_ds.manifest_filepath = config["train_ds"]["manifest_filepath"]
-        cfg.train_ds.batch_size = config["train_ds"].get("batch_size", 4)
-        cfg.train_ds.num_workers = config["train_ds"].get("num_workers", 4)
-        cfg.train_ds.sample_rate = config["train_ds"].get("sample_rate", 16000)
-        cfg.train_ds.max_duration = config["train_ds"].get("max_duration", 20.0)
-        cfg.train_ds.min_duration = config["train_ds"].get("min_duration", 0.3)
-        cfg.train_ds.shuffle = config["train_ds"].get("shuffle", True)
-        cfg.train_ds.pin_memory = config["train_ds"].get("pin_memory", True)
-        cfg.train_ds.use_lhotse = False
-        cfg.train_ds.is_tarred = False
-        cfg.train_ds.tarred_audio_filepaths = None
-        cfg.train_ds.defer_setup = False
+        # Completely replace train_ds to avoid inherited tarred/lhotse settings
+        cfg.train_ds = OmegaConf.create({
+            "manifest_filepath": config["train_ds"]["manifest_filepath"],
+            "batch_size": config["train_ds"].get("batch_size", 4),
+            "num_workers": config["train_ds"].get("num_workers", 4),
+            "sample_rate": config["train_ds"].get("sample_rate", 16000),
+            "max_duration": config["train_ds"].get("max_duration", 20.0),
+            "min_duration": config["train_ds"].get("min_duration", 0.3),
+            "shuffle": config["train_ds"].get("shuffle", True),
+            "pin_memory": config["train_ds"].get("pin_memory", True),
+            "use_lhotse": False,
+            "is_tarred": False,
+            "tarred_audio_filepaths": None,
+            "defer_setup": False,
+        })
 
-        # Validation data
-        cfg.validation_ds.manifest_filepath = config["validation_ds"][
-            "manifest_filepath"
-        ]
-        cfg.validation_ds.batch_size = config["validation_ds"].get("batch_size", 4)
-        cfg.validation_ds.num_workers = config["validation_ds"].get("num_workers", 4)
-        cfg.validation_ds.sample_rate = config["validation_ds"].get(
-            "sample_rate", 16000
-        )
-        cfg.validation_ds.shuffle = False
-        cfg.validation_ds.pin_memory = config["validation_ds"].get("pin_memory", True)
-        cfg.validation_ds.use_lhotse = False
-        cfg.validation_ds.is_tarred = False
-        cfg.validation_ds.tarred_audio_filepaths = None
+        # Completely replace validation_ds
+        cfg.validation_ds = OmegaConf.create({
+            "manifest_filepath": config["validation_ds"]["manifest_filepath"],
+            "batch_size": config["validation_ds"].get("batch_size", 4),
+            "num_workers": config["validation_ds"].get("num_workers", 4),
+            "sample_rate": config["validation_ds"].get("sample_rate", 16000),
+            "shuffle": False,
+            "pin_memory": config["validation_ds"].get("pin_memory", True),
+            "use_lhotse": False,
+            "is_tarred": False,
+            "tarred_audio_filepaths": None,
+        })
 
-        # Optimizer
+        # Optimizer - completely replace to avoid inherited params
         optim_config = config.get("optim", {})
-        cfg.optim.name = optim_config.get("name", "adamw")
-        cfg.optim.lr = optim_config.get("lr", 5e-5)
-        cfg.optim.weight_decay = optim_config.get("weight_decay", 0.001)
-        if "betas" in optim_config:
-            cfg.optim.betas = optim_config["betas"]
-
-        # Scheduler
-        sched_config = optim_config.get("sched", {})
-        cfg.optim.sched.name = sched_config.get("name", "CosineAnnealing")
-        cfg.optim.sched.warmup_steps = sched_config.get("warmup_steps", 100)
-        cfg.optim.sched.min_lr = sched_config.get("min_lr", 1e-6)
+        cfg.optim = OmegaConf.create({
+            "name": optim_config.get("name", "adamw"),
+            "lr": optim_config.get("lr", 5e-5),
+            "weight_decay": optim_config.get("weight_decay", 0.001),
+            "betas": optim_config.get("betas", [0.9, 0.98]),
+            "sched": {
+                "name": "CosineAnnealing",
+                "warmup_steps": optim_config.get("sched", {}).get("warmup_steps", 100),
+                "min_lr": optim_config.get("sched", {}).get("min_lr", 1e-6),
+            }
+        })
 
         # Spec augmentation
         spec_aug_config = config.get("spec_augment", {})
