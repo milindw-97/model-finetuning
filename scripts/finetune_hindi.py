@@ -25,9 +25,9 @@ Prerequisites:
 # Disable Numba CUDA to avoid RTX 5090/Blackwell (sm_120) compatibility issues
 # Numba's CUDA JIT doesn't support sm_120 yet. PyTorch CUDA will still work.
 # Must be set BEFORE importing numba or any NeMo modules
-import os
-os.environ["NUMBA_DISABLE_CUDA"] = "1"
-os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
+# import os
+# os.environ["NUMBA_DISABLE_CUDA"] = "1"
+# os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
 
 import argparse
 import logging
@@ -144,7 +144,7 @@ def finetune_parakeet(
     from omegaconf import OmegaConf, open_dict
 
     # Set precision for Tensor Cores (RTX 5090)
-    torch.set_float32_matmul_precision('high')
+    torch.set_float32_matmul_precision("high")
 
     # Apply command line overrides
     if train_manifest:
@@ -217,47 +217,55 @@ def finetune_parakeet(
 
     with open_dict(cfg):
         # Completely replace train_ds to avoid inherited tarred/lhotse settings
-        cfg.train_ds = OmegaConf.create({
-            "manifest_filepath": config["train_ds"]["manifest_filepath"],
-            "batch_size": config["train_ds"].get("batch_size", 4),
-            "num_workers": config["train_ds"].get("num_workers", 4),
-            "sample_rate": config["train_ds"].get("sample_rate", 16000),
-            "max_duration": config["train_ds"].get("max_duration", 20.0),
-            "min_duration": config["train_ds"].get("min_duration", 0.3),
-            "shuffle": config["train_ds"].get("shuffle", True),
-            "pin_memory": config["train_ds"].get("pin_memory", True),
-            "use_lhotse": False,
-            "is_tarred": False,
-            "tarred_audio_filepaths": None,
-            "defer_setup": False,
-        })
+        cfg.train_ds = OmegaConf.create(
+            {
+                "manifest_filepath": config["train_ds"]["manifest_filepath"],
+                "batch_size": config["train_ds"].get("batch_size", 4),
+                "num_workers": config["train_ds"].get("num_workers", 4),
+                "sample_rate": config["train_ds"].get("sample_rate", 16000),
+                "max_duration": config["train_ds"].get("max_duration", 20.0),
+                "min_duration": config["train_ds"].get("min_duration", 0.3),
+                "shuffle": config["train_ds"].get("shuffle", True),
+                "pin_memory": config["train_ds"].get("pin_memory", True),
+                "use_lhotse": False,
+                "is_tarred": False,
+                "tarred_audio_filepaths": None,
+                "defer_setup": False,
+            }
+        )
 
         # Completely replace validation_ds
-        cfg.validation_ds = OmegaConf.create({
-            "manifest_filepath": config["validation_ds"]["manifest_filepath"],
-            "batch_size": config["validation_ds"].get("batch_size", 4),
-            "num_workers": config["validation_ds"].get("num_workers", 4),
-            "sample_rate": config["validation_ds"].get("sample_rate", 16000),
-            "shuffle": False,
-            "pin_memory": config["validation_ds"].get("pin_memory", True),
-            "use_lhotse": False,
-            "is_tarred": False,
-            "tarred_audio_filepaths": None,
-        })
+        cfg.validation_ds = OmegaConf.create(
+            {
+                "manifest_filepath": config["validation_ds"]["manifest_filepath"],
+                "batch_size": config["validation_ds"].get("batch_size", 4),
+                "num_workers": config["validation_ds"].get("num_workers", 4),
+                "sample_rate": config["validation_ds"].get("sample_rate", 16000),
+                "shuffle": False,
+                "pin_memory": config["validation_ds"].get("pin_memory", True),
+                "use_lhotse": False,
+                "is_tarred": False,
+                "tarred_audio_filepaths": None,
+            }
+        )
 
         # Optimizer - completely replace to avoid inherited params
         optim_config = config.get("optim", {})
-        cfg.optim = OmegaConf.create({
-            "name": optim_config.get("name", "adamw"),
-            "lr": optim_config.get("lr", 5e-5),
-            "weight_decay": optim_config.get("weight_decay", 0.001),
-            "betas": optim_config.get("betas", [0.9, 0.98]),
-            "sched": {
-                "name": "CosineAnnealing",
-                "warmup_steps": optim_config.get("sched", {}).get("warmup_steps", 100),
-                "min_lr": optim_config.get("sched", {}).get("min_lr", 1e-6),
+        cfg.optim = OmegaConf.create(
+            {
+                "name": optim_config.get("name", "adamw"),
+                "lr": optim_config.get("lr", 5e-5),
+                "weight_decay": optim_config.get("weight_decay", 0.001),
+                "betas": optim_config.get("betas", [0.9, 0.98]),
+                "sched": {
+                    "name": "CosineAnnealing",
+                    "warmup_steps": optim_config.get("sched", {}).get(
+                        "warmup_steps", 100
+                    ),
+                    "min_lr": optim_config.get("sched", {}).get("min_lr", 1e-6),
+                },
             }
-        })
+        )
 
         # Spec augmentation
         spec_aug_config = config.get("spec_augment", {})
@@ -270,16 +278,19 @@ def finetune_parakeet(
         # Use PyTorch-native RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
         # Numba CUDA kernels don't support sm_120 (Blackwell) yet
         # Completely replace loss config
-        cfg.loss = OmegaConf.create({
-            "loss_name": "pytorch",
-            "reduction": "mean_batch",
-        })
+        cfg.loss = OmegaConf.create(
+            {
+                "loss_name": "pytorch",
+                "reduction": "mean_batch",
+            }
+        )
         logger.info("Using pytorch RNNT loss (RTX 5090/Blackwell compatible)")
 
     model.cfg = cfg
 
     # Rebuild the loss module with pytorch loss (required for RTX 5090/Blackwell)
     from nemo.collections.asr.losses.rnnt import RNNTLoss
+
     model.loss = RNNTLoss(
         num_classes=model.joint.num_classes_with_blank - 1,
         loss_name="pytorch",
@@ -306,6 +317,7 @@ def finetune_parakeet(
     # Rebuild the loss module AFTER data setup to ensure it's the final loss
     # This is critical for RTX 5090/Blackwell which doesn't support Numba CUDA
     from nemo.collections.asr.losses.rnnt import RNNTLoss
+
     model.loss = RNNTLoss(
         num_classes=model.joint.num_classes_with_blank - 1,
         loss_name="pytorch",
@@ -431,7 +443,9 @@ def main():
     )
     parser.add_argument("--resume", type=str, help="Resume from checkpoint")
     parser.add_argument(
-        "--model-path", type=str, help="Path to local .nemo model file to use as base model"
+        "--model-path",
+        type=str,
+        help="Path to local .nemo model file to use as base model",
     )
 
     args = parser.parse_args()
