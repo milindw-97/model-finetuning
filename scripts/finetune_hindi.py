@@ -303,13 +303,24 @@ def finetune_parakeet(
     model.setup_training_data(cfg.train_ds)
     model.setup_validation_data(cfg.validation_ds)
 
+    # Rebuild the loss module AFTER data setup to ensure it's the final loss
+    # This is critical for RTX 5090/Blackwell which doesn't support Numba CUDA
+    from nemo.collections.asr.losses.rnnt import RNNTLoss
+    model.loss = RNNTLoss(
+        num_classes=model.joint.num_classes_with_blank - 1,
+        loss_name="pytorch",
+        loss_kwargs={},
+        reduction="mean_batch",
+    )
+    logger.info("Final loss module set to: pytorch (after data setup)")
+
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
-    # Use 32-bit precision to avoid AMP issues with RNNT loss on RTX 5090
-    # Can switch to bf16-mixed once training is stable
-    precision = trainer_config.get("precision", "32")
-    logger.info(f"Using precision: {precision}")
+    # FORCE 32-bit precision to avoid AMP issues with RNNT loss on RTX 5090
+    # The config file may have 16-mixed which causes issues with Numba loss
+    precision = "32"
+    logger.info(f"Using precision: {precision} (forced for RTX 5090 compatibility)")
 
     trainer = pl.Trainer(
         devices=trainer_config.get("devices", 1),
