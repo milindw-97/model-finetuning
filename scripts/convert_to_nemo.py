@@ -20,6 +20,15 @@ Usage:
         --streaming \
         --max-samples 5000
 
+    # Incremental training: skip first 2000 samples, use next 3000
+    python scripts/convert_to_nemo.py \
+        --input-dataset ai4bharat/IndicVoices_r \
+        --subset hindi \
+        --output-dir data \
+        --streaming \
+        --offset 2000 \
+        --max-samples 3000
+
 NeMo Manifest Format (one JSON per line):
     {"audio_filepath": "/path/to/audio.wav", "text": "transcription", "duration": 5.2, "lang": "hi"}
 """
@@ -249,6 +258,7 @@ def convert_streaming_to_nemo(
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
     max_samples: Optional[int] = None,
+    offset: int = 0,
     seed: int = 42,
 ) -> Dict[str, str]:
     """
@@ -272,6 +282,7 @@ def convert_streaming_to_nemo(
         val_ratio: Ratio for validation set
         test_ratio: Ratio for test set
         max_samples: Maximum number of samples to process
+        offset: Number of samples to skip from the beginning
         seed: Random seed
 
     Returns:
@@ -322,17 +333,25 @@ def convert_streaming_to_nemo(
     val_threshold = train_ratio + val_ratio
     # test is everything above val_threshold
 
-    logger.info(f"Processing samples (streaming mode, max_samples={max_samples})...")
+    logger.info(f"Processing samples (streaming mode, max_samples={max_samples}, offset={offset})...")
     logger.info(
         f"Split ratios - Train: {train_ratio}, Val: {val_ratio}, Test: {test_ratio}"
     )
+    if offset > 0:
+        logger.info(f"Skipping first {offset} samples...")
 
     total_processed = 0
+    samples_skipped_for_offset = 0
 
     try:
         for idx, sample in enumerate(
-            tqdm(dataset, desc="Converting", total=max_samples)
+            tqdm(dataset, desc="Converting", total=(max_samples + offset) if max_samples else None)
         ):
+            # Skip samples until we reach the offset
+            if samples_skipped_for_offset < offset:
+                samples_skipped_for_offset += 1
+                continue
+
             if max_samples and total_processed >= max_samples:
                 break
 
@@ -544,6 +563,12 @@ def main():
         default=None,
         help="Maximum number of samples to process (recommended with --streaming)",
     )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Number of samples to skip from the beginning (use with --streaming for incremental training)",
+    )
 
     args = parser.parse_args()
 
@@ -563,6 +588,7 @@ def main():
             val_ratio=args.val_ratio,
             test_ratio=args.test_ratio,
             max_samples=args.max_samples,
+            offset=args.offset,
             seed=args.seed,
         )
     else:
@@ -656,6 +682,7 @@ def main():
         "sample_rate": args.sample_rate,
         "streaming_mode": args.streaming,
         "max_samples": args.max_samples,
+        "offset": args.offset,
         "splits": {},
     }
 
