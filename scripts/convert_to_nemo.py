@@ -29,6 +29,15 @@ Usage:
         --offset 2000 \
         --max-samples 3000
 
+    # With language tags for multilingual models (wraps text as "<hi-IN> text <hi-IN>")
+    python scripts/convert_to_nemo.py \
+        --input-dataset ai4bharat/IndicVoices_r \
+        --subset hindi \
+        --output-dir data \
+        --streaming \
+        --max-samples 2000 \
+        --lang-tag hi-IN
+
 NeMo Manifest Format (one JSON per line):
     {"audio_filepath": "/path/to/audio.wav", "text": "transcription", "duration": 5.2, "lang": "hi"}
 """
@@ -259,6 +268,7 @@ def convert_streaming_to_nemo(
     test_ratio: float = 0.15,
     max_samples: Optional[int] = None,
     offset: int = 0,
+    lang_tag: Optional[str] = None,
     seed: int = 42,
 ) -> Dict[str, str]:
     """
@@ -277,6 +287,7 @@ def convert_streaming_to_nemo(
         language: Language code
         target_sr: Target sample rate
         max_duration: Maximum audio duration
+        lang_tag: Language tag to wrap transcripts (e.g., "hi-IN" -> "<hi-IN> text <hi-IN>")
         min_duration: Minimum audio duration
         train_ratio: Ratio for training set
         val_ratio: Ratio for validation set
@@ -339,6 +350,8 @@ def convert_streaming_to_nemo(
     )
     if offset > 0:
         logger.info(f"Skipping first {offset} samples...")
+    if lang_tag:
+        logger.info(f"Adding language tags: <{lang_tag}> text <{lang_tag}>")
 
     total_processed = 0
     samples_skipped_for_offset = 0
@@ -399,6 +412,10 @@ def convert_streaming_to_nemo(
                     continue
 
                 text = str(text).strip()
+
+                # Wrap text with language tag if specified (e.g., "<hi-IN> text <hi-IN>")
+                if lang_tag:
+                    text = f"<{lang_tag}> {text} <{lang_tag}>"
 
                 # Randomly assign to split
                 rand_val = random.random()
@@ -569,6 +586,12 @@ def main():
         default=0,
         help="Number of samples to skip from the beginning (use with --streaming for incremental training)",
     )
+    parser.add_argument(
+        "--lang-tag",
+        type=str,
+        default=None,
+        help="Language tag to prepend to transcripts (e.g., 'hi-IN' adds '<hi-IN> ' before each transcript)",
+    )
 
     args = parser.parse_args()
 
@@ -589,6 +612,7 @@ def main():
             test_ratio=args.test_ratio,
             max_samples=args.max_samples,
             offset=args.offset,
+            lang_tag=args.lang_tag,
             seed=args.seed,
         )
     else:
