@@ -7,28 +7,22 @@ Optimized for small datasets with encoder freezing and careful hyperparameters.
 
 Usage:
     python scripts/finetune_hindi.py --config configs/hindi_finetune.yaml
-
-    Or with command line overrides:
-    python scripts/finetune_hindi.py \
-        --train-manifest data/train_manifest.json \
-        --val-manifest data/val_manifest.json \
-        --output-dir outputs/hindi-finetuned \
-        --epochs 100 \
-        --freeze-encoder
+    python scripts/finetune_hindi.py --config configs/hindi_finetune_a100.yaml  # For A100
 
 Prerequisites:
     - NeMo toolkit installed (pip install nemo_toolkit[asr])
-    - GPU with at least 16GB memory (T4 or better)
+    - GPU with at least 16GB memory
     - Dataset converted to NeMo manifest format
+
+Supported GPUs:
+    - A100 (sm_80): Full support, fastest training
+    - V100 (sm_70): Full support
+    - T4 (sm_75): Full support, use smaller batch sizes
+    - RTX 3090/4090 (sm_86/89): Full support
+    - RTX 5090/Blackwell (sm_100/120): Requires workarounds (auto-applied)
 """
 
-# Disable Numba CUDA to avoid RTX 5090/Blackwell (sm_120) compatibility issues
-# Numba's CUDA JIT doesn't support sm_120 yet. PyTorch CUDA will still work.
-# Must be set BEFORE importing numba or any NeMo modules
-# import os
-# os.environ["NUMBA_DISABLE_CUDA"] = "1"
-# os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
-
+import os
 import argparse
 import logging
 import sys
@@ -36,6 +30,22 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+
+# Detect GPU architecture and apply workarounds if needed
+IS_BLACKWELL = False
+if torch.cuda.is_available():
+    capability = torch.cuda.get_device_capability(0)
+    arch = capability[0] * 10 + capability[1]
+
+    # Blackwell GPUs (sm_100, sm_120) need workarounds
+    if arch >= 100:
+        IS_BLACKWELL = True
+        # Disable Numba CUDA - doesn't support sm_100/120 yet
+        os.environ["NUMBA_DISABLE_CUDA"] = "1"
+        os.environ["NUMBA_CUDA_USE_NVIDIA_BINDING"] = "0"
+        # Disable cuDNN - RNN kernels don't support sm_100/120
+        torch.backends.cudnn.enabled = False
+
 import yaml
 
 logging.basicConfig(
@@ -69,11 +79,15 @@ def check_dependencies():
         missing.append("omegaconf")
 
     if torch.cuda.is_available():
-        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-        logger.info(
-            f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB"
-        )
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+        capability = torch.cuda.get_device_capability(0)
+        logger.info(f"GPU: {gpu_name} (sm_{capability[0]}{capability[1]}, {gpu_mem:.1f} GB)")
         logger.info(f"CUDA: {torch.version.cuda}")
+        if IS_BLACKWELL:
+            logger.info("Blackwell compatibility mode: ENABLED (Numba/cuDNN disabled)")
+        else:
+            logger.info("Full GPU acceleration: ENABLED")
     else:
         logger.warning("No GPU detected! Training will be very slow.")
 
@@ -275,29 +289,29 @@ def finetune_parakeet(
             cfg.spec_augment.freq_width = spec_aug_config.get("freq_width", 27)
             cfg.spec_augment.time_width = spec_aug_config.get("time_width", 0.05)
 
-        # Use PyTorch-native RNNT loss instead of Numba (for RTX 5090/Blackwell compatibility)
-        # Numba CUDA kernels don't support sm_120 (Blackwell) yet
-        # Completely replace loss config
-        cfg.loss = OmegaConf.create(
-            {
-                "loss_name": "pytorch",
-                "reduction": "mean_batch",
-            }
-        )
-        logger.info("Using pytorch RNNT loss (RTX 5090/Blackwell compatible)")
+        # For Blackwell GPUs: use PyTorch-native RNNT loss instead of Numba
+        # Numba CUDA kernels don't support sm_100/120 yet
+        if IS_BLACKWELL:
+            cfg.loss = OmegaConf.create(
+                {
+                    "loss_name": "pytorch",
+                    "reduction": "mean_batch",
+                }
+            )
+            logger.info("Using pytorch RNNT loss (Blackwell compatibility mode)")
 
     model.cfg = cfg
 
-    # Rebuild the loss module with pytorch loss (required for RTX 5090/Blackwell)
-    from nemo.collections.asr.losses.rnnt import RNNTLoss
-
-    model.loss = RNNTLoss(
-        num_classes=model.joint.num_classes_with_blank - 1,
-        loss_name="pytorch",
-        loss_kwargs={},
-        reduction="mean_batch",
-    )
-    logger.info("Rebuilt loss module with: pytorch")
+    # For Blackwell GPUs: rebuild loss module with pytorch loss
+    if IS_BLACKWELL:
+        from nemo.collections.asr.losses.rnnt import RNNTLoss
+        model.loss = RNNTLoss(
+            num_classes=model.joint.num_classes_with_blank - 1,
+            loss_name="pytorch",
+            loss_kwargs={},
+            reduction="mean_batch",
+        )
+        logger.info("Rebuilt loss module with: pytorch (Blackwell)")
 
     logger.info("Model configuration updated for fine-tuning")
 
@@ -314,25 +328,27 @@ def finetune_parakeet(
     model.setup_training_data(cfg.train_ds)
     model.setup_validation_data(cfg.validation_ds)
 
-    # Rebuild the loss module AFTER data setup to ensure it's the final loss
-    # This is critical for RTX 5090/Blackwell which doesn't support Numba CUDA
-    from nemo.collections.asr.losses.rnnt import RNNTLoss
-
-    model.loss = RNNTLoss(
-        num_classes=model.joint.num_classes_with_blank - 1,
-        loss_name="pytorch",
-        loss_kwargs={},
-        reduction="mean_batch",
-    )
-    logger.info("Final loss module set to: pytorch (after data setup)")
+    # For Blackwell GPUs: rebuild loss module AFTER data setup
+    if IS_BLACKWELL:
+        from nemo.collections.asr.losses.rnnt import RNNTLoss
+        model.loss = RNNTLoss(
+            num_classes=model.joint.num_classes_with_blank - 1,
+            loss_name="pytorch",
+            loss_kwargs={},
+            reduction="mean_batch",
+        )
+        logger.info("Final loss module set to: pytorch (after data setup)")
 
     # Setup trainer
     trainer_config = config.get("trainer", {})
 
-    # FORCE 32-bit precision to avoid AMP issues with RNNT loss on RTX 5090
-    # The config file may have 16-mixed which causes issues with Numba loss
-    precision = "32"
-    logger.info(f"Using precision: {precision} (forced for RTX 5090 compatibility)")
+    # Precision: use config value for supported GPUs, force FP32 for Blackwell
+    if IS_BLACKWELL:
+        precision = "32"
+        logger.info(f"Using precision: {precision} (forced for Blackwell compatibility)")
+    else:
+        precision = trainer_config.get("precision", "bf16-mixed")
+        logger.info(f"Using precision: {precision}")
 
     trainer = pl.Trainer(
         devices=trainer_config.get("devices", 1),

@@ -1,0 +1,116 @@
+# Hindi Fine-Tuning Configuration for Parakeet RNNT 1.1B
+#
+# Optimized for A100 GPU (40GB/80GB) - Fast training with full feature support
+# A100 (Ampere sm_80) has full support for cuDNN, Numba, BF16, and Tensor Cores
+#
+# Usage:
+#   python scripts/finetune_hindi.py --config configs/hindi_finetune_a100.yaml
+
+# Pre-trained model
+model:
+  # pretrained_name: "nvidia/parakeet-rnnt-1.1b"
+  # Alternative: use local .nemo file
+  pretrained_path: "models/parakeet-rnnt-1.1b-multilingual.nemo"
+
+# Training data configuration
+train_ds:
+  manifest_filepath: "data/train_manifest.json"
+  batch_size: 16  # A100 40GB can handle 16-24, A100 80GB can handle 32+
+  num_workers: 8  # More workers for faster data loading
+  sample_rate: 16000
+  max_duration: 20.0
+  min_duration: 0.3
+  shuffle: true
+  pin_memory: true
+
+# Validation data configuration
+validation_ds:
+  manifest_filepath: "data/val_manifest.json"
+  batch_size: 16
+  num_workers: 8
+  sample_rate: 16000
+  shuffle: false
+  pin_memory: true
+
+# Test data configuration (optional)
+test_ds:
+  manifest_filepath: "data/test_manifest.json"
+  batch_size: 16
+  num_workers: 8
+  sample_rate: 16000
+
+# Optimizer configuration
+optim:
+  name: adamw
+  lr: 1.0e-5  # Can use slightly higher LR with larger batch
+  betas: [0.9, 0.98]
+  weight_decay: 0.001
+
+  # Learning rate scheduler
+  sched:
+    name: CosineAnnealing
+    warmup_steps: 200
+    min_lr: 1.0e-7
+
+# Spec augmentation (data augmentation for audio)
+spec_augment:
+  freq_masks: 2
+  time_masks: 10
+  freq_width: 27
+  time_width: 0.05
+
+# Encoder freezing
+# CRITICAL for small datasets - prevents catastrophic forgetting
+encoder:
+  freeze: true
+
+# Trainer configuration - A100 optimized
+trainer:
+  devices: 1  # Number of GPUs
+  accelerator: "gpu"
+  max_epochs: 30
+  precision: "bf16-mixed"  # A100 has native BF16 support - 2x faster than FP32
+
+  # Gradient settings
+  accumulate_grad_batches: 2  # Effective batch size = 16 * 2 = 32
+  gradient_clip_val: 1.0
+
+  # Logging
+  log_every_n_steps: 10
+
+  # Checkpointing
+  enable_checkpointing: true
+
+# Experiment manager
+exp_manager:
+  exp_dir: "outputs/parakeet-hindi-finetuned"
+  name: "hindi_finetune_a100"
+  create_tensorboard_logger: true
+  create_wandb_logger: false
+
+  # Checkpoint settings
+  checkpoint_callback_params:
+    monitor: "val_wer"
+    mode: "min"
+    save_top_k: 3
+    save_last: true
+
+  # Early stopping
+  early_stopping_callback_params:
+    monitor: "val_wer"
+    patience: 10
+    min_delta: 0.001
+    mode: "min"
+
+# Tokenizer configuration
+tokenizer:
+  update_tokenizer: false
+
+# Output configuration
+output:
+  dir: "outputs/parakeet-hindi-finetuned"
+  save_final_model: true
+  export_onnx: false
+
+# Reproducibility
+seed: 42
