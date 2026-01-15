@@ -7,9 +7,9 @@
 
 # Pre-trained model
 model:
-  pretrained_name: "nvidia/parakeet-rnnt-1.1b"
+  # pretrained_name: "nvidia/parakeet-rnnt-1.1b"
   # Alternative: use local .nemo file
-  # pretrained_path: "/path/to/model.nemo"
+  pretrained_path: "models/parakeet-rnnt-1.1b-multilingual.nemo"
 
 # Training data configuration
 train_ds:
@@ -42,7 +42,7 @@ test_ds:
 # Lower learning rate for small dataset to prevent overfitting
 optim:
   name: adamw
-  lr: 5.0e-5  # Lower LR for small dataset
+  lr: 1.0e-6  # Lower LR for small dataset
   betas: [0.9, 0.98]
   weight_decay: 0.001
 
@@ -71,8 +71,8 @@ encoder:
 trainer:
   devices: 1  # Number of GPUs
   accelerator: "gpu"
-  max_epochs: 100
-  precision: "16-mixed"  # T4 GPU doesn't support bf16, use fp16 instead
+  max_epochs: 20
+  precision: "bf16-mixed"
 
   # Gradient settings
   accumulate_grad_batches: 4  # Effective batch size = 4 * 4 = 16
