@@ -23,6 +23,10 @@ Supported GPUs:
 """
 
 import os
+# Disable CUDA graphs to avoid compilation issues on some GPU/driver combinations
+os.environ["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+os.environ["NEMO_RNNT_DECODING_LOOP_ALGORITHM"] = "legacy"  # Disable CUDA graphs in decoding
+
 import argparse
 import logging
 import sys
@@ -215,6 +219,20 @@ def finetune_parakeet(
     logger.info(f"  Encoder: {model.encoder.__class__.__name__}")
     logger.info(f"  Decoder: {model.decoder.__class__.__name__}")
 
+    # Disable CUDA graphs in decoding to avoid compilation issues
+    try:
+        if hasattr(model, 'decoding') and model.decoding is not None:
+            decoding_obj = model.decoding
+            if hasattr(decoding_obj, 'decoding') and decoding_obj.decoding is not None:
+                inner_decoding = decoding_obj.decoding
+                if hasattr(inner_decoding, 'use_cuda_graphs'):
+                    inner_decoding.use_cuda_graphs = False
+                if hasattr(inner_decoding, 'cuda_graphs_mode'):
+                    inner_decoding.cuda_graphs_mode = None
+                logger.info("Disabled CUDA graphs in decoding")
+    except Exception as e:
+        logger.warning(f"Could not disable CUDA graphs: {e}")
+
     # Add this BEFORE with open_dict(cfg):
     train_path = config["train_ds"]["manifest_filepath"]
     val_path = config["validation_ds"]["manifest_filepath"]
@@ -288,6 +306,15 @@ def finetune_parakeet(
             cfg.spec_augment.time_masks = spec_aug_config.get("time_masks", 10)
             cfg.spec_augment.freq_width = spec_aug_config.get("freq_width", 27)
             cfg.spec_augment.time_width = spec_aug_config.get("time_width", 0.05)
+
+        # Disable CUDA graphs in decoding config to avoid compilation issues
+        if hasattr(cfg, "decoding"):
+            cfg.decoding.greedy = OmegaConf.create({
+                "max_symbols": 10,
+                "loop_labels": False,  # Disable loop labels to avoid CUDA graphs
+                "use_cuda_graphs": False,
+            })
+            logger.info("Configured decoding to disable CUDA graphs")
 
         # For Blackwell GPUs: use PyTorch-native RNNT loss instead of Numba
         # Numba CUDA kernels don't support sm_100/120 yet
