@@ -29,7 +29,7 @@ Usage:
         --offset 2000 \
         --max-samples 3000
 
-    # With language tags for multilingual models (wraps text as "<hi-IN> text <hi-IN>")
+    # With language tags for multilingual models (adds "<hi-IN>" at end of transcript)
     python scripts/convert_to_nemo.py \
         --input-dataset ai4bharat/IndicVoices_r \
         --subset hindi \
@@ -287,7 +287,7 @@ def convert_streaming_to_nemo(
         language: Language code
         target_sr: Target sample rate
         max_duration: Maximum audio duration
-        lang_tag: Language tag to wrap transcripts (e.g., "hi-IN" -> "<hi-IN> text <hi-IN>")
+        lang_tag: Language tag to append to transcripts (e.g., "hi-IN" -> "text <hi-IN>")
         min_duration: Minimum audio duration
         train_ratio: Ratio for training set
         val_ratio: Ratio for validation set
@@ -351,7 +351,7 @@ def convert_streaming_to_nemo(
     if offset > 0:
         logger.info(f"Skipping first {offset} samples...")
     if lang_tag:
-        logger.info(f"Adding language tags: <{lang_tag}> text <{lang_tag}>")
+        logger.info(f"Adding language tag at end: text <{lang_tag}>")
 
     total_processed = 0
     samples_skipped_for_offset = 0
@@ -413,9 +413,9 @@ def convert_streaming_to_nemo(
 
                 text = str(text).strip()
 
-                # Wrap text with language tag if specified (e.g., "<hi-IN> text <hi-IN>")
+                # Add language tag at end if specified (e.g., "text <hi-IN>")
                 if lang_tag:
-                    text = f"<{lang_tag}> {text} <{lang_tag}>"
+                    text = f"{text} <{lang_tag}>"
 
                 # Randomly assign to split
                 rand_val = random.random()
@@ -590,7 +590,7 @@ def main():
         "--lang-tag",
         type=str,
         default=None,
-        help="Language tag to prepend to transcripts (e.g., 'hi-IN' adds '<hi-IN> ' before each transcript)",
+        help="Language tag to append to transcripts (e.g., 'hi-IN' adds ' <hi-IN>' at end)",
     )
 
     args = parser.parse_args()
