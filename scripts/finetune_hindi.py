@@ -190,15 +190,11 @@ def finetune_parakeet(
 
     if local_model_path and Path(local_model_path).exists():
         logger.info(f"Loading from local .nemo file: {local_model_path}")
-        # Load on CPU first to avoid cuDNN RNN kernel issues on Blackwell GPUs
-        model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(
-            local_model_path, map_location='cpu'
-        )
+        model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(local_model_path)
     else:
         logger.info(f"Loading pre-trained model from HuggingFace: {model_name}")
-        # Load on CPU first to avoid cuDNN RNN kernel issues on Blackwell GPUs
         model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(
-            model_name=model_name, map_location='cpu'
+            model_name=model_name
         )
 
     logger.info(f"Model loaded: {model.__class__.__name__}")
